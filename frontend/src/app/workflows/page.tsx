@@ -9,6 +9,14 @@ import { AuthGuard } from "@/components/auth/auth-guard";
 import { Button } from "@/components/ui/button";
 import { useAssistantContext } from "@/context/assistant-context";
 import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyContent,
+} from "@/components/ui/empty";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -25,7 +33,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Plus, MoreVertical, Bot, ChevronDown, Copy, Check } from "lucide-react";
+import { Plus, MoreVertical, Bot, ChevronDown, Copy, Check, GitFork } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
 
@@ -126,7 +134,6 @@ export default function WorkflowsPage() {
       });
 
       if (!res.ok) {
-        // alert("Failed to delete workflow");
         addToast({
           type: "error",
           title: "Failed to delete workflow",
@@ -236,6 +243,30 @@ async function copyId(id: string) {
 
             {loading ? (
               <p className="opacity-70">Loading workflows...</p>
+            ) : workflows.length === 0 ? (
+              <div className="py-12 max-w-2xl mx-auto">
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <GitFork />
+                    </EmptyMedia>
+                    <EmptyTitle>No workflows yet</EmptyTitle>
+                    <EmptyDescription>
+                      Create your first automated workflow or build from a template configuration to begin setting up agent jobs.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <div className="flex gap-4">
+                      <Button onClick={() => setOpen("blank")}>
+                        Create Blank Workflow
+                      </Button>
+                      <Button variant="outline" onClick={() => setOpen("template")}>
+                        Choose Template
+                      </Button>
+                    </div>
+                  </EmptyContent>
+                </Empty>
+              </div>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {workflows.map((workflow) => (
@@ -364,20 +395,14 @@ function CreateWorkflowModal({
   refresh: () => void;
 }) {
   const [loading, setLoading] = useState(false);
-
   const { addToast } = useToast();
-
-  /* Submit */
 
   async function createWorkflow(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-
     setLoading(true);
 
     const form = e.currentTarget;
-
     const name = (form.elements.namedItem("name") as HTMLInputElement).value;
-
     const description = (
       form.elements.namedItem("description") as HTMLTextAreaElement
     ).value;
@@ -405,7 +430,6 @@ function CreateWorkflowModal({
       onOpenChange();
     } catch (err) {
       console.error("Create workflow failed", err);
-
       addToast({
         type: "error",
         title: "Failed to create workflow",
@@ -453,8 +477,7 @@ function CreateWorkflowModal({
               <Button variant="outline" type="button" onClick={onOpenChange}>
                 Cancel
               </Button>
-
-              <Button type="submit">Create Workflow</Button>
+              <Button type="submit" disabled={loading}>Create Workflow</Button>
             </DialogFooter>
           </form>
         )}
@@ -489,7 +512,6 @@ function EditWorkflowModal({
 
   async function save() {
     if (!workflow) return;
-
     setLoading(true);
 
     try {
@@ -550,7 +572,6 @@ function EditWorkflowModal({
           <Button variant="outline" onClick={close}>
             Cancel
           </Button>
-
           <Button onClick={save} disabled={loading}>
             Save Changes
           </Button>
@@ -578,15 +599,11 @@ function TemplateSelector({
     });
 
     const data = await res.json();
-
     if (data.ok) setTemplates(data.templates);
   }
 
   useEffect(() => {
-    async function loadTemplates() {
-      await fetchTemplates();
-    }
-    loadTemplates();
+    fetchTemplates();
   }, []);
 
   async function applyTemplate(id: string) {
@@ -633,7 +650,6 @@ function TemplateSelector({
 
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {t.category && <Badge variant="secondary">{t.category}</Badge>}
-
               {t.stepsCount && <span>{t.stepsCount} steps</span>}
             </div>
           </div>

@@ -1,4 +1,11 @@
 // src/server.js (or root server file that you run)
+const dotenv = require("dotenv");
+const validateEnv = require("./src/config/env");
+
+dotenv.config();
+
+validateEnv();
+
 require("dotenv").config();
 const connectDB = require("./src/config/db");
 const app = require("./src/app");

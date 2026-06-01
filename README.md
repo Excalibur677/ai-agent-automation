@@ -253,6 +253,7 @@ Frontend → `http://localhost:3000`
 ---
 
 ## 🐳 Docker Deployment
+Detailed guide: `docs/docker-deployment.md`
 
 Run the entire platform (MongoDB, backend API, worker, and frontend) using Docker.
 

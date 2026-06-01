@@ -1,7 +1,7 @@
 "use client";
 
+import { validateGraphIntegrity } from "@/utils/graphValidation";
 import { useParams, useRouter } from "next/navigation";
-import { v4 as uuidv4 } from "uuid";
 import { useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Card } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import VisualBuilder from "@/components/workflow/visual-builder";
 import { Textarea } from "@/components/ui/textarea";
 import { useEffect } from "react";
 import { Save, Play, Plus, Trash2 } from "lucide-react";
+import { generateNodeId } from "@/utils/ids"; // ✅ Using centralized ID system
 import {
   Select,
   SelectContent,
@@ -136,21 +137,6 @@ type WorkflowResponse = {
   };
 };
 
-type BackendStepType = "llm" | "http" | "delay" | "tool";
-
-type BackendStepPayload = {
-  stepId: string;
-  name: string;
-  type: BackendStepType;
-
-  prompt?: string;
-  seconds?: number;
-
-  method?: "GET" | "POST" | "PUT" | "DELETE";
-  url?: string;
-  body?: string;
-};
-
 /* ---------------- UTILS ---------------- */
 
 function getTypeColor(type: StepType) {
@@ -172,7 +158,6 @@ function getTypeColor(type: StepType) {
 
 function summarizeStep(step: WorkflowStep) {
   switch (step.type) {
-    /* ---------- LLM ---------- */
     case "LLM":
       return step.prompt
         ? `Prompt: ${step.prompt.slice(0, 120)}${
@@ -180,12 +165,10 @@ function summarizeStep(step: WorkflowStep) {
           }`
         : "No prompt configured";
 
-    /* ---------- HTTP ---------- */
     case "HTTP": {
       const method = step.method ?? "GET";
       const url = step.url?.trim() || "❌ not set";
       const body = step.body?.trim();
-
       let bodyStatus = "none";
 
       if (body) {
@@ -196,17 +179,12 @@ function summarizeStep(step: WorkflowStep) {
           bodyStatus = "invalid JSON";
         }
       }
-
-      return [`Method: ${method}`, `URL: ${url}`, `Body: ${bodyStatus}`].join(
-        " | ",
-      );
+      return [`Method: ${method}`, `URL: ${url}`, `Body: ${bodyStatus}`].join(" | ");
     }
 
-    /* ---------- DELAY ---------- */
     case "Delay":
       return `Delay for ${step.delay ?? 0} seconds`;
 
-    /* ---------- DOCUMENT QUERY ---------- */
     case "Document":
       return step.query
         ? `Query: ${step.query.slice(0, 120)}${
@@ -214,43 +192,23 @@ function summarizeStep(step: WorkflowStep) {
           }`
         : "No query configured";
 
-    /* ---------- TOOL ---------- */
     case "Tool": {
       if (!step.tool) return "Tool not selected";
-
-      /* EMAIL TOOL */
       if (step.tool === "email") {
-        const to = step.to || "❌ no recipient";
-        const subject = step.subject || "no subject";
-
-        return `Email → ${to} | Subject: ${subject}`;
+        return `Email → ${step.to || "❌ no recipient"} | Subject: ${step.subject || "no subject"}`;
       }
-
-      /* FILE TOOL */
       if (step.tool === "file") {
-        const action = step.action || "action";
-        const path = step.path || "❌ path not set";
-
-        return `File ${action} | Path: ${path}`;
+        return `File ${step.action || "action"} | Path: ${step.path || "❌ path not set"}`;
       }
-
-      /* BROWSER TOOL */
       if (step.tool === "browser") {
-        const action = step.action || "action";
-        const url = step.url || "❌ url not set";
-
-        return `Browser ${action} | URL: ${url}`;
+        return `Browser ${step.action || "action"} | URL: ${step.url || "❌ url not set"}`;
       }
-
       return "Tool execution step";
     }
-
     default:
       return "Unknown step";
   }
 }
-
-/* ---------------- PAGE ---------------- */
 
 export default function WorkflowBuilderPage() {
   const { id } = useParams<{ id: string }>();
@@ -281,12 +239,11 @@ export default function WorkflowBuilderPage() {
       const backendSteps = workflow.metadata?.steps ?? [];
       const backendEdges = (workflow.metadata?.edges ?? []).map((e: any) => ({
         ...e,
-        id: e.id || crypto.randomUUID(),
+        id: e.id || generateNodeId("edge"), // ✅ Safe parsing fallback
         label: e.label || e.caseValue || e.condition?.toUpperCase() || "",
       }));
       setEdges(backendEdges);
 
-      // 🔄 normalize backend steps → builder steps
       const normalizedSteps: WorkflowStep[] = backendSteps.map((s) => ({
         id: s.stepId,
         name: s.name,
@@ -308,21 +265,13 @@ export default function WorkflowBuilderPage() {
                       : "LLM",
 
         position: (s as any).position || { x: 0, y: 0 },
-
-        // LLM
         useMemory: (s as any).useMemory ?? false,
         memoryTopK: (s as any).memoryTopK ?? 5,
         prompt: s.prompt ?? "",
-
-        // HTTP
         url: s.url ?? "",
         method: s.method ?? "GET",
         body: s.body ?? "",
-
-        // Delay
         delay: s.type === "delay" ? (s.seconds ?? 0) : 0,
-
-        // 🔥 TOOL FIELDS
         tool:
           s.type === "file" || s.type === "email" || s.type === "browser"
             ? (s.type as ToolType)
@@ -335,21 +284,14 @@ export default function WorkflowBuilderPage() {
         path: (s as any).path ?? "",
         content: (s as any).content ?? "",
         code: (s as any).code ?? "",
-
-        // Document
         documentId: (s as any).documentId ?? "",
         query: (s as any).query ?? "",
         topK: (s as any).topK ?? 4,
-
-        // CONDITION
         conditionType: (s as any).conditionType ?? "",
         operator: (s as any).operator ?? "",
         value: (s as any).value ?? "",
-
         trueTarget: (s as any).trueTarget ?? "",
         falseTarget: (s as any).falseTarget ?? "",
-
-        // SWITCH
         cases: (s as any).cases ?? [],
         defaultTarget: (s as any).defaultTarget ?? "",
       }));
@@ -361,6 +303,7 @@ export default function WorkflowBuilderPage() {
       setLoading(false);
     }
   }
+
   useEffect(() => {
     fetchWorkflow();
   }, [id]);
@@ -373,7 +316,6 @@ export default function WorkflowBuilderPage() {
       workflowId: id,
       workflowName: workflowName ?? undefined,
       status: "editing",
-
       builderSteps: steps
         .filter(
           (s) =>
@@ -403,9 +345,7 @@ export default function WorkflowBuilderPage() {
             Authorization: "Bearer " + localStorage.getItem("token"),
           },
         });
-
         const data = await res.json();
-
         if (data.ok) {
           setDocuments(data.documents || []);
         }
@@ -413,7 +353,6 @@ export default function WorkflowBuilderPage() {
         console.error("Failed to fetch documents", err);
       }
     }
-
     fetchDocs();
   }, []);
 
@@ -421,7 +360,7 @@ export default function WorkflowBuilderPage() {
     setSteps((prev) => [
       ...prev,
       {
-        id: uuidv4(),
+        id: generateNodeId("LLM"), // ✅ Replaced random string mapping
         type: "LLM",
         name: "New Step",
         prompt: "",
@@ -431,10 +370,8 @@ export default function WorkflowBuilderPage() {
 
   function enrichStepsWithEdges(steps: WorkflowStep[], edges: any[]) {
     return steps.map((step) => {
-      // 🔀 SWITCH NODE
       if (step.type === "Switch") {
         const outgoing = edges.filter((e) => e.source === step.id);
-
         const cases = outgoing
           .filter((e) => e.caseValue)
           .map((e) => ({
@@ -442,32 +379,20 @@ export default function WorkflowBuilderPage() {
             target: e.target,
           }));
 
-        const fallback = outgoing.find((e) => !e.caseValue);
-
         return {
           ...step,
           cases,
-          defaultTarget: fallback?.target,
+          defaultTarget: outgoing.find((e) => !e.caseValue)?.target,
         };
       }
 
-      // 🔁 CONDITION NODE
       if (step.type === "Condition") {
-        const trueEdge = edges.find(
-          (e) => e.source === step.id && e.condition === "true",
-        );
-
-        const falseEdge = edges.find(
-          (e) => e.source === step.id && e.condition === "false",
-        );
-
         return {
           ...step,
-          trueTarget: trueEdge?.target,
-          falseTarget: falseEdge?.target,
+          trueTarget: edges.find((e) => e.source === step.id && e.condition === "true")?.target,
+          falseTarget: edges.find((e) => e.source === step.id && e.condition === "false")?.target,
         };
       }
-
       return step;
     });
   }
@@ -477,7 +402,6 @@ export default function WorkflowBuilderPage() {
       const enrichedSteps = enrichStepsWithEdges(steps, edges);
 
       const backendSteps = enrichedSteps.map((s) => {
-        // ----- LLM -----
         if (s.type === "LLM") {
           return {
             stepId: s.id,
@@ -489,8 +413,6 @@ export default function WorkflowBuilderPage() {
             memoryTopK: s.memoryTopK ?? 5,
           };
         }
-
-        // ----- Delay -----
         if (s.type === "Delay") {
           return {
             stepId: s.id,
@@ -500,8 +422,6 @@ export default function WorkflowBuilderPage() {
             seconds: s.delay ?? 0,
           };
         }
-
-        // ----- HTTP -----
         if (s.type === "HTTP") {
           return {
             stepId: s.id,
@@ -513,7 +433,6 @@ export default function WorkflowBuilderPage() {
             body: s.body ?? "",
           };
         }
-
         if (s.type === "Document") {
           return {
             stepId: s.id,
@@ -525,7 +444,6 @@ export default function WorkflowBuilderPage() {
             topK: s.topK ?? 4,
           };
         }
-
         if (s.type === "Condition") {
           return {
             stepId: s.id,
@@ -539,8 +457,6 @@ export default function WorkflowBuilderPage() {
             falseTarget: s.falseTarget,
           };
         }
-
-        // ----- SWITCH -----
         if (s.type === "Switch") {
           return {
             stepId: s.id,
@@ -549,13 +465,8 @@ export default function WorkflowBuilderPage() {
             type: "switch",
           };
         }
-
-        // ----- TOOL (convert to real executor type) -----
         if (s.type === "Tool" && s.tool) {
-          // 🔥 convert tool → actual executor type
           const toolType = s.tool.toLowerCase();
-          // expected: "file" | "email" | "browser"
-
           const base: any = {
             stepId: s.id,
             name: s.name,
@@ -563,7 +474,6 @@ export default function WorkflowBuilderPage() {
             type: toolType,
           };
 
-          // ----- FILE -----
           if (toolType === "file") {
             return {
               ...base,
@@ -572,8 +482,6 @@ export default function WorkflowBuilderPage() {
               content: s.content ?? "",
             };
           }
-
-          // ----- EMAIL -----
           if (toolType === "email") {
             return {
               ...base,
@@ -583,8 +491,6 @@ export default function WorkflowBuilderPage() {
               html: s.html ?? "",
             };
           }
-
-          // ----- BROWSER -----
           if (toolType === "browser") {
             return {
               ...base,
@@ -593,12 +499,8 @@ export default function WorkflowBuilderPage() {
               code: s.code ?? "",
             };
           }
-
-          // fallback safety
           return base;
         }
-
-        // fallback (should never hit)
         return {
           stepId: s.id,
           name: s.name,
@@ -607,6 +509,19 @@ export default function WorkflowBuilderPage() {
         };
       });
 
+      // 🛡️ Final Graph Integrity Validation Check
+      const validation = validateGraphIntegrity(backendSteps, edges);
+      if (!validation.isValid) {
+        console.error("Save workflow blocked due to validation errors:", validation.errors);
+        addToast({
+          type: "error",
+          title: "Failed to Save Workflow",
+          description: validation.errors[0] || "Your workflow contains orphaned edges or invalid connections. Please resolve them before saving.",
+        });
+        return; // Halt execution entirely
+      }
+
+      // 🚀 Topology is verified clean - proceed with secure API request
       const res = await fetch(apiUrl(`/workflows/${id}/steps`), {
         method: "PUT",
         headers: {
@@ -619,9 +534,7 @@ export default function WorkflowBuilderPage() {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error("Failed to save workflow");
-      }
+      if (!res.ok) throw new Error("Failed to save workflow");
 
       addToast({
         type: "success",
@@ -647,6 +560,7 @@ export default function WorkflowBuilderPage() {
       prev.map((s) => (s.id === stepId ? { ...s, ...patch } : s)),
     );
   }
+
   if (loading) {
     return (
       <div className="flex min-h-screen">
@@ -657,6 +571,7 @@ export default function WorkflowBuilderPage() {
       </div>
     );
   }
+
   return (
     <AuthGuard>
       <div className="flex min-h-screen">
@@ -709,13 +624,12 @@ export default function WorkflowBuilderPage() {
                 </Button>
                 <Button onClick={saveWorkflow}>
                   <Play className="mr-2 size-4" />
-                  Save
+                  Save Changes
                 </Button>
               </div>
             </div>
 
-            {/* Steps */}
-
+            {/* Render Canvas vs List view toggles */}
             {builderMode === "visual" && (
               <VisualBuilder
                 steps={steps}
@@ -740,7 +654,6 @@ export default function WorkflowBuilderPage() {
                       transition={{ duration: 0.2, ease: "easeOut" }}
                     >
                       <Card
-                        key={step.id}
                         className="p-6 transition-shadow hover:shadow-lg"
                         onClick={() => {
                           const validStepType = (
@@ -748,12 +661,12 @@ export default function WorkflowBuilderPage() {
                               ? step.type
                               : "LLM"
                           ) as "LLM" | "HTTP" | "Tool" | "Delay";
+
                           setContext({
                             page: "workflow-builder",
                             workflowId: id,
                             workflowName: workflowName ?? undefined,
                             status: "editing",
-
                             builderSteps: steps
                               .filter(
                                 (s) =>
@@ -765,11 +678,7 @@ export default function WorkflowBuilderPage() {
                               .map((s) => ({
                                 id: s.id,
                                 name: s.name,
-                                type: s.type as
-                                  | "LLM"
-                                  | "HTTP"
-                                  | "Delay"
-                                  | "Tool",
+                                type: s.type as "LLM" | "HTTP" | "Delay" | "Tool",
                                 summary: summarizeStep(s),
                               })),
                             stepId: step.id,
@@ -799,14 +708,16 @@ export default function WorkflowBuilderPage() {
                             variant="ghost"
                             size="icon"
                             className="text-destructive"
-                            onClick={() => removeStep(step.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeStep(step.id);
+                            }}
                           >
                             <Trash2 className="size-4" />
                           </Button>
                         </div>
 
                         <div className="space-y-4">
-                          {/* Step Type */}
                           <div>
                             <Label>Step Type</Label>
                             <Select
@@ -822,23 +733,16 @@ export default function WorkflowBuilderPage() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="LLM">LLM</SelectItem>
-                                <SelectItem value="HTTP">
-                                  HTTP Request
-                                </SelectItem>
+                                <SelectItem value="HTTP">HTTP Request</SelectItem>
                                 <SelectItem value="Delay">Delay</SelectItem>
                                 <SelectItem value="Tool">Tool</SelectItem>
-                                <SelectItem value="Document">
-                                  Document Query
-                                </SelectItem>
-                                <SelectItem value="Condition">
-                                  Condition
-                                </SelectItem>
+                                <SelectItem value="Document">Document Query</SelectItem>
+                                <SelectItem value="Condition">Condition</SelectItem>
                                 <SelectItem value="Switch">Switch</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
 
-                          {/* Step Name */}
                           <div>
                             <Label>Step Name</Label>
                             <Input
@@ -852,7 +756,6 @@ export default function WorkflowBuilderPage() {
                             />
                           </div>
 
-                          {/* Tools */}
                           {step.type === "Tool" && (
                             <>
                               <div>
@@ -869,9 +772,7 @@ export default function WorkflowBuilderPage() {
                                   <SelectContent>
                                     <SelectItem value="email">Email</SelectItem>
                                     <SelectItem value="file">File</SelectItem>
-                                    <SelectItem value="browser">
-                                      Browser
-                                    </SelectItem>
+                                    <SelectItem value="browser">Browser</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
@@ -890,7 +791,6 @@ export default function WorkflowBuilderPage() {
                                       }
                                     />
                                   </div>
-
                                   <div>
                                     <Label>Subject</Label>
                                     <Input
@@ -903,7 +803,6 @@ export default function WorkflowBuilderPage() {
                                       }
                                     />
                                   </div>
-
                                   <div>
                                     <Label>Text</Label>
                                     <Textarea
@@ -933,19 +832,12 @@ export default function WorkflowBuilderPage() {
                                         <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="write">
-                                          Write
-                                        </SelectItem>
-                                        <SelectItem value="append">
-                                          Append
-                                        </SelectItem>
-                                        <SelectItem value="read">
-                                          Read
-                                        </SelectItem>
+                                        <SelectItem value="write">Write</SelectItem>
+                                        <SelectItem value="append">Append</SelectItem>
+                                        <SelectItem value="read">Read</SelectItem>
                                       </SelectContent>
                                     </Select>
                                   </div>
-
                                   <div>
                                     <Label>Path</Label>
                                     <Input
@@ -958,7 +850,6 @@ export default function WorkflowBuilderPage() {
                                       }
                                     />
                                   </div>
-
                                   {step.action !== "read" && (
                                     <div>
                                       <Label>Content</Label>
@@ -990,16 +881,11 @@ export default function WorkflowBuilderPage() {
                                         <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="screenshot">
-                                          Screenshot
-                                        </SelectItem>
-                                        <SelectItem value="evaluate">
-                                          Evaluate
-                                        </SelectItem>
+                                        <SelectItem value="screenshot">Screenshot</SelectItem>
+                                        <SelectItem value="evaluate">Evaluate</SelectItem>
                                       </SelectContent>
                                     </Select>
                                   </div>
-
                                   <div>
                                     <Label>URL</Label>
                                     <Input
@@ -1012,7 +898,6 @@ export default function WorkflowBuilderPage() {
                                       }
                                     />
                                   </div>
-
                                   {step.action === "evaluate" && (
                                     <div>
                                       <Label>Code</Label>
@@ -1032,7 +917,6 @@ export default function WorkflowBuilderPage() {
                             </>
                           )}
 
-                          {/* LLM */}
                           {step.type === "LLM" && (
                             <>
                               <div>
@@ -1047,18 +931,10 @@ export default function WorkflowBuilderPage() {
                                   }
                                 />
                               </div>
-
-                              {/* 🔥 Advanced Options */}
                               <div className="mt-4 rounded-lg border border-muted p-4">
-                                <p className="text-sm font-semibold mb-3">
-                                  Advanced Options
-                                </p>
-
+                                <p className="text-sm font-semibold mb-3">Advanced Options</p>
                                 <div className="flex items-center justify-between">
-                                  <Label className="cursor-pointer">
-                                    Use Agent Memory
-                                  </Label>
-
+                                  <Label className="cursor-pointer">Use Agent Memory</Label>
                                   <input
                                     type="checkbox"
                                     checked={step.useMemory ?? false}
@@ -1069,7 +945,6 @@ export default function WorkflowBuilderPage() {
                                     }
                                   />
                                 </div>
-
                                 {step.useMemory && (
                                   <div className="mt-3">
                                     <Label>Memory Top K</Label>
@@ -1089,7 +964,6 @@ export default function WorkflowBuilderPage() {
                             </>
                           )}
 
-                          {/* HTTP */}
                           {step.type === "HTTP" && (
                             <>
                               <div>
@@ -1109,13 +983,10 @@ export default function WorkflowBuilderPage() {
                                     <SelectItem value="GET">GET</SelectItem>
                                     <SelectItem value="POST">POST</SelectItem>
                                     <SelectItem value="PUT">PUT</SelectItem>
-                                    <SelectItem value="DELETE">
-                                      DELETE
-                                    </SelectItem>
+                                    <SelectItem value="DELETE">DELETE</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
-
                               <div>
                                 <Label>URL</Label>
                                 <Input
@@ -1143,7 +1014,6 @@ export default function WorkflowBuilderPage() {
                             </>
                           )}
 
-                          {/* DOCUMENT */}
                           {step.type === "Document" && (
                             <>
                               <div>
@@ -1157,7 +1027,6 @@ export default function WorkflowBuilderPage() {
                                   <SelectTrigger className="mt-1.5">
                                     <SelectValue placeholder="Select document" />
                                   </SelectTrigger>
-
                                   <SelectContent>
                                     {documents.map((doc) => (
                                       <SelectItem key={doc._id} value={doc._id}>
@@ -1167,7 +1036,6 @@ export default function WorkflowBuilderPage() {
                                   </SelectContent>
                                 </Select>
                               </div>
-
                               <div>
                                 <Label>Query</Label>
                                 <Textarea
@@ -1180,7 +1048,6 @@ export default function WorkflowBuilderPage() {
                                   }
                                 />
                               </div>
-
                               <div>
                                 <Label>Top K Chunks</Label>
                                 <Input
@@ -1197,7 +1064,6 @@ export default function WorkflowBuilderPage() {
                             </>
                           )}
 
-                          {/* Delay */}
                           {step.type === "Delay" && (
                             <div>
                               <Label>Delay (seconds)</Label>
@@ -1214,7 +1080,6 @@ export default function WorkflowBuilderPage() {
                             </div>
                           )}
 
-                          {/* CONDITION */}
                           {step.type === "Condition" && (
                             <>
                               <div>
@@ -1231,16 +1096,11 @@ export default function WorkflowBuilderPage() {
                                     <SelectValue placeholder="Select type" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="boolean">
-                                      Boolean
-                                    </SelectItem>
-                                    <SelectItem value="sentiment">
-                                      Sentiment
-                                    </SelectItem>
+                                    <SelectItem value="boolean">Boolean</SelectItem>
+                                    <SelectItem value="sentiment">Sentiment</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
-
                               <div>
                                 <Label>Operator</Label>
                                 <Select
@@ -1255,23 +1115,14 @@ export default function WorkflowBuilderPage() {
                                   <SelectContent>
                                     {step.conditionType === "boolean" && (
                                       <>
-                                        <SelectItem value="isTrue">
-                                          is True
-                                        </SelectItem>
-                                        <SelectItem value="isFalse">
-                                          is False
-                                        </SelectItem>
+                                        <SelectItem value="isTrue">is True</SelectItem>
+                                        <SelectItem value="isFalse">is False</SelectItem>
                                       </>
                                     )}
-
                                     {step.conditionType === "sentiment" && (
                                       <>
-                                        <SelectItem value="isPositive">
-                                          is Positive
-                                        </SelectItem>
-                                        <SelectItem value="isNegative">
-                                          is Negative
-                                        </SelectItem>
+                                        <SelectItem value="isPositive">is Positive</SelectItem>
+                                        <SelectItem value="isNegative">is Negative</SelectItem>
                                       </>
                                     )}
                                   </SelectContent>
