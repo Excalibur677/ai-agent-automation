@@ -7,6 +7,9 @@ export function usePerformanceMonitor(componentName: string) {
   const lastRenderTime = useRef(Date.now());
 
   useEffect(() => {
+    // Gate behind development mode
+    if (process.env.NODE_ENV !== "development") return;
+
     renderCount.current += 1;
     const now = Date.now();
     const timeSinceLastRender = now - lastRenderTime.current;
@@ -16,5 +19,5 @@ export function usePerformanceMonitor(componentName: string) {
     );
     
     lastRenderTime.current = now;
-  });
+  }); 
 }

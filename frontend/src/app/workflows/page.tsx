@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, FormEvent, useCallback, useMemo } from "react";
+import { useEffect, useState, FormEvent, useCallback, memo } from "react";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Card } from "@/components/ui/card";
@@ -71,6 +71,117 @@ function getStatusColor(status: string) {
       return "bg-muted text-muted-foreground";
   }
 }
+
+/* ---------------- Memoized Workflow Card ---------------- */
+// Extracted to prevent entire list from re-rendering when one card updates
+const WorkflowCard = memo(({ 
+  workflow, 
+  agentName, 
+  isCopied, 
+  onCopy, 
+  onEdit, 
+  onDelete 
+}: { 
+  workflow: Workflow; 
+  agentName: string;
+  isCopied: boolean;
+  onCopy: (id: string) => void;
+  onEdit: (workflow: Workflow) => void;
+  onDelete: (id: string) => void;
+}) => {
+  return (
+    <Card className="p-6">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <Link
+            href={`/workflows/${workflow._id}`}
+            className="text-lg font-semibold hover:text-primary"
+          >
+            {workflow.name}
+          </Link>
+
+          {workflow.description && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {workflow.description}
+            </p>
+          )}
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent align="end">
+            <Link href={`/workflows/${workflow._id}/builder`}>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onEdit(workflow);
+                }}
+              >
+                Edit Workflow Details
+              </DropdownMenuItem>
+            </Link>
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete(workflow._id);
+              }}
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <Badge className={getStatusColor(workflow.status)}>
+          {workflow.status}
+        </Badge>
+
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Bot className="size-4" />
+          <span>{agentName}</span>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between border-t pt-3">
+        <span className="text-xs text-muted-foreground font-mono truncate max-w-[160px]">
+          {workflow._id.slice(0, 8)}...
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+          onClick={(e) => {
+            e.preventDefault();
+            onCopy(workflow._id);
+          }}
+        >
+          {isCopied ? (
+            <>
+              <Check className="size-3 text-green-500" />
+              <span className="text-green-500">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="size-3" />
+              Copy ID
+            </>
+          )}
+        </Button>
+      </div>
+    </Card>
+  );
+});
+
+WorkflowCard.displayName = "WorkflowCard";
 
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -163,6 +274,11 @@ export default function WorkflowsPage() {
     fetchAgents();
   }, [fetchAgents]);
 
+  const getAgentName = useCallback((agentId?: string | null) => {
+    if (!agentId) return "No agent";
+    return agentMap[agentId] ?? "Unknown agent";
+  }, [agentMap]);
+
   useEffect(() => {
     if (loading) return;
 
@@ -181,8 +297,8 @@ export default function WorkflowsPage() {
     return () => {
       clearContext();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, workflows]);
+  // Properly resolving exhaustive-deps by adding stable context setters and callbacks
+  }, [loading, workflows, setContext, clearContext, getAgentName]);
 
   const copyId = useCallback(async (id: string) => {
     try {
@@ -198,108 +314,9 @@ export default function WorkflowsPage() {
     }
   }, [addToast]);
 
-  const getAgentName = useCallback((agentId?: string | null) => {
-    if (!agentId) return "No agent";
-    return agentMap[agentId] ?? "Unknown agent";
-  }, [agentMap]);
-
-  // Memoize the list mapping so opening a modal doesn't trigger 50+ re-renders
-  const renderedWorkflows = useMemo(() => {
-    return workflows.map((workflow) => (
-      <Card key={workflow._id} className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <Link
-              href={`/workflows/${workflow._id}`}
-              className="text-lg font-semibold hover:text-primary"
-            >
-              {workflow.name}
-            </Link>
-
-            {workflow.description && (
-              <p className="mt-2 text-sm text-muted-foreground">
-                {workflow.description}
-              </p>
-            )}
-          </div>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-              >
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-
-            <DropdownMenuContent align="end">
-              <Link href={`/workflows/${workflow._id}/builder`}>
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setEditingWorkflow(workflow);
-                  }}
-                >
-                  Edit Workflow Details
-                </DropdownMenuItem>
-              </Link>
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDeleteWorkflow(workflow._id);
-                }}
-              >
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <div className="mt-4 flex items-center justify-between">
-          <Badge className={getStatusColor(workflow.status)}>
-            {workflow.status}
-          </Badge>
-
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Bot className="size-4" />
-            <span>{getAgentName(workflow.agentId)}</span>
-          </div>
-        </div>
-
-        <div className="mt-3 flex items-center justify-between border-t pt-3">
-          <span className="text-xs text-muted-foreground font-mono truncate max-w-[160px]">
-            {workflow._id.slice(0, 8)}...
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 text-xs"
-            onClick={(e) => {
-              e.preventDefault();
-              copyId(workflow._id);
-            }}
-          >
-            {copiedId === workflow._id ? (
-              <>
-                <Check className="size-3 text-green-500" />
-                <span className="text-green-500">Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="size-3" />
-                Copy ID
-              </>
-            )}
-          </Button>
-        </div>
-      </Card>
-    ));
-  }, [workflows, copiedId, getAgentName, handleDeleteWorkflow, copyId]);
+  const handleEditWorkflow = useCallback((workflow: Workflow) => {
+    setEditingWorkflow(workflow);
+  }, []);
 
   return (
     <AuthGuard>
@@ -368,7 +385,17 @@ export default function WorkflowsPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {renderedWorkflows}
+                {workflows.map((workflow) => (
+                  <WorkflowCard
+                    key={workflow._id}
+                    workflow={workflow}
+                    agentName={getAgentName(workflow.agentId)}
+                    isCopied={copiedId === workflow._id}
+                    onCopy={copyId}
+                    onEdit={handleEditWorkflow}
+                    onDelete={handleDeleteWorkflow}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -597,18 +624,16 @@ function TemplateSelector({
   const [templates, setTemplates] = useState<any[]>([]);
   const { addToast } = useToast();
 
-  async function fetchTemplates() {
-    const res = await fetch(apiUrl("/templates"), {
-      headers: {
-        Authorization: "Bearer " + localStorage.getItem("token"),
-      },
-    });
-
-    const data = await res.json();
-    if (data.ok) setTemplates(data.templates);
-  }
-
   useEffect(() => {
+    async function fetchTemplates() {
+      const res = await fetch(apiUrl("/templates"), {
+        headers: {
+          Authorization: "Bearer " + localStorage.getItem("token"),
+        },
+      });
+      const data = await res.json();
+      if (data.ok) setTemplates(data.templates);
+    }
     fetchTemplates();
   }, []);
 
