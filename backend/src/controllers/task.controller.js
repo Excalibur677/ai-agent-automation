@@ -22,6 +22,7 @@ async function createTask(req, res) {
 
     let workflow = null;
     let steps = [];
+    let edges = [];
     let agentId = null;
 
     if (workflowId) {
@@ -37,7 +38,7 @@ async function createTask(req, res) {
         ? workflow.metadata.steps
         : [];
 
-      const edges = Array.isArray(workflow.metadata?.edges)
+      edges = Array.isArray(workflow.metadata?.edges)
         ? workflow.metadata.edges
         : [];
 

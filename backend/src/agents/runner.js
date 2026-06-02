@@ -129,13 +129,18 @@ async function runWorkerLoop() {
         Array.isArray(task.steps) && task.steps.length > 0
           ? task.steps
           : Array.isArray(task.metadata?.steps)
-            ? task.metadata.steps
-            : [];
+            && task.metadata.steps.length > 0
+              ? task.metadata.steps
+              : Array.isArray(workflow?.metadata?.steps)
+                ? workflow.metadata.steps
+                : [];
 
       const edges =
-        task.metadata?.edges ||
-        workflow?.metadata?.edges ||
-        [];
+        Array.isArray(task.metadata?.edges) && task.metadata.edges.length > 0
+          ? task.metadata.edges
+          : Array.isArray(workflow?.metadata?.edges)
+            ? workflow.metadata.edges
+            : [];
       let success = true;
 
       // console.log("🧩 STEPS:", steps);

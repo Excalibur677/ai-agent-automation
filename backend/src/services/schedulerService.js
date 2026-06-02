@@ -19,6 +19,9 @@ async function createTaskForSchedule(schedule) {
     }
 
     const steps = workflow.metadata?.steps;
+    const edges = Array.isArray(workflow.metadata?.edges)
+      ? workflow.metadata.edges
+      : [];
 
     if (!Array.isArray(steps) || steps.length === 0) {
       console.warn(
@@ -42,6 +45,7 @@ async function createTaskForSchedule(schedule) {
       input: schedule.taskInput || {},
       metadata: {
         ...(schedule.taskMetadata || {}),
+        edges,
         scheduledBy: schedule._id.toString(),
         trigger: "schedule"
       },

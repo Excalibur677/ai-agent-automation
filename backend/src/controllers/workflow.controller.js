@@ -151,6 +151,17 @@ async function runWorkflowNow(req, res) {
     if (workflow.userId.toString() !== req.user._id.toString())
       return res.status(403).json({ ok: false, error: "forbidden" });
 
+    const steps = Array.isArray(workflow.metadata?.steps)
+      ? workflow.metadata.steps
+      : [];
+    const edges = Array.isArray(workflow.metadata?.edges)
+      ? workflow.metadata.edges
+      : [];
+
+    if (steps.length === 0) {
+      return res.status(400).json({ ok: false, error: "workflow_has_no_steps" });
+    }
+
     // Create task
     const task = await Task.create({
       name: `Workflow Run - ${workflow.name}`,
@@ -158,8 +169,11 @@ async function runWorkflowNow(req, res) {
       agentId: workflow.agentId || null,
       userId: req.user._id,
       input: {},
+      steps,
+      currentStep: 0,
       metadata: {
-        steps: workflow.metadata?.steps || [],
+        steps,
+        edges,
         runningBy: null
       },
       status: "pending"
