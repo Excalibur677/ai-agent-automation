@@ -177,8 +177,8 @@ async function start() {
  * Stop all jobs
  */
 function stop() {
-  for (const [_k, job] of jobs.entries()) {
-    try { job.stop(); } catch (_e) { /* ignore stop errors */ }
+  for (const [k, job] of jobs.entries()) {
+    try { job.stop(); } catch { }
   }
   jobs.clear();
 }

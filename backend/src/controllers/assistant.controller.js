@@ -155,8 +155,7 @@ async function sendChat(provider, modelOverride, messages) {
     console.error("LLM Provider Error:", err?.response?.data || err.message);
 
     throw new Error(
-      `Model '${modelOverride || "default"}' not found or invalid for provider '${provider}'`,
-      { cause: err }
+      `Model '${modelOverride || "default"}' not found or invalid for provider '${provider}'`
     );
   }
 }

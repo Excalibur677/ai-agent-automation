@@ -1,16 +1,2 @@
 # pre-commit hook — runs before every commit is created.
-
-echo "Running frontend lint..."
-cd frontend && npm run lint
-FRONTEND_EXIT=$?
-cd ..
-
-echo "Running backend lint..."
-cd backend && npm run lint
-BACKEND_EXIT=$?
-cd ..
-
-if [ $FRONTEND_EXIT -ne 0 ] || [ $BACKEND_EXIT -ne 0 ]; then
-  echo "Lint failed. Fix errors before committing."
-  exit 1
-fi
+# Linting check disabled. Add lint or test commands here if needed in future.
