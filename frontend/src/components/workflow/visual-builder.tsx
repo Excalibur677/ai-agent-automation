@@ -10,7 +10,7 @@ import ReactFlow, {
   Node,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiUrl } from "@/lib/api";
 import { generateNodeId, generateEdgeId } from "@/utils/ids";
 import { duplicateNodesSafely } from "@/utils/graphValidation";
@@ -219,14 +219,18 @@ export default function VisualBuilder({
   setSteps,
   edges,
   onEdgesChange,
+  onSave,
 }: {
   steps: any[];
   setSteps: React.Dispatch<React.SetStateAction<any[]>>;
   edges: any[];
   onEdgesChange: (edges: any[]) => void;
+  onSave?: () => void;
 }) {
   usePerformanceMonitor("VisualBuilder");
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const historyRef = useRef<any[][]>([]);
+  const futureRef = useRef<any[][]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
   const [flowEdges, setFlowEdges] = useState<CustomEdge[]>(() => edges || []);
   const selectedStep = steps.find((s) => s.id === selectedNode?.id);
@@ -237,12 +241,14 @@ export default function VisualBuilder({
 
   const deleteNode = useCallback(
     (nodeId: string) => {
+      setSteps((prev) => {
+        historyRef.current.push([...prev]);
+        futureRef.current = [];
+        return prev.filter((s) => s.id !== nodeId);
+      });
       setFlowEdges((eds) =>
         eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
       );
-
-      setSteps((prev) => prev.filter((s) => s.id !== nodeId));
-
       setSelectedNode((prev) => (prev?.id === nodeId ? null : prev));
     },
     [setSteps],
@@ -306,6 +312,61 @@ export default function VisualBuilder({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [nodes, steps, flowEdges, setSteps]);
+
+  /* ---------- KEYBOARD SHORTCUTS: Save / Delete / Undo / Redo ---------- */
+  useEffect(() => {
+    const isInputFocused = () => {
+      const el = document.activeElement;
+      if (!el) return false;
+      const tag = (el as HTMLElement).tagName.toLowerCase();
+      return (
+        tag === "input" ||
+        tag === "textarea" ||
+        (el as HTMLElement).isContentEditable
+      );
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isInputFocused()) return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      if (isMod && e.key === "s") {
+        e.preventDefault();
+        onSave?.();
+        return;
+      }
+
+      if (isMod && !e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        if (historyRef.current.length === 0) return;
+        const prev = historyRef.current.pop()!;
+        futureRef.current.push(steps);
+        setSteps(prev);
+        return;
+      }
+
+      if (isMod && e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        if (futureRef.current.length === 0) return;
+        const next = futureRef.current.pop()!;
+        historyRef.current.push(steps);
+        setSteps(next);
+        return;
+      }
+
+      if (e.key === "Delete" && selectedNode) {
+        e.preventDefault();
+        historyRef.current.push([...steps]);
+        futureRef.current = [];
+        deleteNode(selectedNode.id);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onSave, selectedNode, steps, deleteNode, setSteps]);
 
   /* ---------- EVENTS ---------- */
 
