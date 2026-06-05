@@ -380,7 +380,7 @@ export default function VisualBuilder({
     setSelectedNode(node);
   }, []);
 
-  const onNodeDragStop: NodeDragHandler = useCallback((_event, _node) => {
+  const onNodeDragStart: NodeDragHandler = useCallback((_event, _node) => {
     historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
     futureRef.current = [];
   }, [steps, flowEdges]);
@@ -695,7 +695,7 @@ export default function VisualBuilder({
         onEdgesChange={handleEdgesChange}
         onEdgesDelete={handleEdgesDelete}
         onNodeClick={onNodeClick}
-        onNodeDragStop={onNodeDragStop}
+        onNodeDragStart={onNodeDragStart}
         proOptions={{ hideAttribution: true }}
         connectionLineStyle={{ strokeWidth: 2 }}
         defaultEdgeOptions={{
