@@ -8,6 +8,7 @@ import ReactFlow, {
   useEdgesState,
   Connection,
   Node,
+  NodeDragHandler,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -379,6 +380,11 @@ export default function VisualBuilder({
     setSelectedNode(node);
   }, []);
 
+  const onNodeDragStart: NodeDragHandler = useCallback((_event, _node) => {
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+    futureRef.current = [];
+  }, [steps, flowEdges]);
+
   const handleEdgesDelete = useCallback((deletedEdges: any[]) => {
     historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
     futureRef.current = [];
@@ -689,6 +695,7 @@ export default function VisualBuilder({
         onEdgesChange={handleEdgesChange}
         onEdgesDelete={handleEdgesDelete}
         onNodeClick={onNodeClick}
+        onNodeDragStart={onNodeDragStart}
         proOptions={{ hideAttribution: true }}
         connectionLineStyle={{ strokeWidth: 2 }}
         defaultEdgeOptions={{
