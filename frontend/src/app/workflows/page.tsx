@@ -150,15 +150,27 @@ const WorkflowCard = memo(
             {isEditing ? (
               <div className="flex items-center gap-2">
                 <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  onBlur={handleSave}
-                  onKeyDown={(e) => e.key === "Enter" && handleSave()}
-                  autoFocus
-                  disabled={isSaving}
-                  className="text-lg font-semibold bg-background border border-input rounded px-2 py-1 flex-1"
-                />
+  type="text"
+  value={editName}
+  onChange={(e) => setEditName(e.target.value)}
+  onBlur={() => {
+    if (isEditing && !isSaving) {
+      handleSave();
+    }
+  }}
+  onKeyDown={(e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === "Escape") {
+      setIsEditing(false);
+      setEditName(workflow.name);
+    }
+  }}
+  autoFocus
+  disabled={isSaving}
+  className="text-lg font-semibold bg-background border border-input rounded px-2 py-1 flex-1"
+/>
                 {isSaving && (
                   <span className="text-sm text-muted-foreground">Saving...</span>
                 )}
@@ -203,17 +215,15 @@ const WorkflowCard = memo(
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <Link href={`/workflows/${workflow._id}/builder`}>
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onEdit(workflow);
-                  }}
-                >
-                  Edit Workflow Details
-                </DropdownMenuItem>
-              </Link>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onEdit(workflow);
+  }}
+>
+  Edit Workflow Details
+</DropdownMenuItem>
               <DropdownMenuItem
                 className="text-destructive"
                 onClick={(e) => {
