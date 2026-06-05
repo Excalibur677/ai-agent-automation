@@ -24,6 +24,7 @@ type StepType =
   | "HTTP"
   | "Delay"
   | "Tool"
+  | "MCP"
   | "Document"
   | "Condition"
   | "Switch"
@@ -59,6 +60,8 @@ function getNodeColor(type: string) {
       return "#2563eb"; // blue
     case "Tool":
       return "#f59e0b"; // orange
+    case "MCP":
+      return "#0f766e"; // teal
     case "Document":
       return "#16a34a"; // green
     case "Delay":
@@ -96,6 +99,11 @@ function buildNodePreview(step: any, edges: CustomEdge[], allSteps: any[]) {
 
   if (step.type === "Tool") {
     rows.push({ name: "tool", type: "string" });
+  }
+
+  if (step.type === "MCP") {
+    rows.push({ name: "server", type: step.serverId || "unset" });
+    rows.push({ name: "tool", type: step.toolName || "unset" });
   }
 
   if (step.type === "Document") {
@@ -234,8 +242,14 @@ export default function VisualBuilder({
   const historyRef = useRef<{ steps: any[]; edges: CustomEdge[] }[]>([]);
   const futureRef = useRef<{ steps: any[]; edges: CustomEdge[] }[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
+  const [mcpTools, setMcpTools] = useState<any[]>([]);
   const [flowEdges, setFlowEdges] = useState<CustomEdge[]>(() => edges || []);
   const selectedStep = steps.find((s) => s.id === selectedNode?.id);
+  const selectedMcpTool = mcpTools.find(
+    (tool) =>
+      tool.serverId === selectedStep?.serverId &&
+      tool.name === selectedStep?.toolName,
+  );
 
   useEffect(() => {
     onEdgesChange(flowEdges);
@@ -256,9 +270,7 @@ export default function VisualBuilder({
     [setSteps],
   );
 
-  const [computedNodes, setComputedNodes] = useState(() =>
-    computeNodes(steps, flowEdges, deleteNode),
-  );
+  const [computedNodes, setComputedNodes] = useState<Node[]>([]);
 
   useEffect(() => {
     setComputedNodes(computeNodes(steps, flowEdges, deleteNode));
@@ -579,6 +591,26 @@ export default function VisualBuilder({
   }, []);
 
   useEffect(() => {
+    async function fetchMcpTools() {
+      try {
+        const res = await fetch(apiUrl("/mcp/tools"), {
+          headers: {
+            Authorization: "Bearer " + localStorage.getItem("token"),
+          },
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setMcpTools(data.tools || []);
+        }
+      } catch (err) {
+        console.error("Failed to load MCP tools", err);
+      }
+    }
+
+    fetchMcpTools();
+  }, []);
+
+  useEffect(() => {
     setNodes((nds) => {
       let changed = false;
       const next = nds.map((node) => {
@@ -772,6 +804,7 @@ export default function VisualBuilder({
                 <option value="HTTP">HTTP</option>
                 <option value="Delay">Delay</option>
                 <option value="Tool">Tool</option>
+                <option value="MCP">MCP</option>
                 <option value="Document">Document</option>
                 <option value="Condition">Condition</option>
                 <option value="Switch">Switch</option>
@@ -889,6 +922,97 @@ export default function VisualBuilder({
                   <option value="browser">Browser</option>
                 </select>
               </div>
+            )}
+
+            {selectedStep.type === "MCP" && (
+              <>
+                <div className="rounded-lg border border-muted p-3 text-xs text-muted-foreground">
+                  External MCP tools are discovered from your configured MCP
+                  servers in Settings.
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Server</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
+                    value={selectedStep.serverId || ""}
+                    onChange={(e) => {
+                      updateStep(selectedStep.id, {
+                        serverId: e.target.value,
+                        toolName: "",
+                      });
+                    }}
+                  >
+                    <option value="" disabled>Select server</option>
+                    {Array.from(
+                      new Map(
+                        mcpTools.map((tool) => [
+                          tool.serverId,
+                          tool.serverName || tool.serverId,
+                        ]),
+                      ).entries(),
+                    ).map(([serverId, serverName]) => (
+                      <option key={serverId} value={serverId}>
+                        {serverName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Tool</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
+                    value={selectedStep.toolName || ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { toolName: e.target.value })
+                    }
+                    disabled={!selectedStep.serverId}
+                  >
+                    <option value="" disabled>Select tool</option>
+                    {mcpTools
+                      .filter((tool) => tool.serverId === selectedStep.serverId)
+                      .map((tool) => (
+                        <option key={tool.id} value={tool.name}>
+                          {tool.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">
+                    Timeout (ms)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
+                    value={selectedStep.timeoutMs || 30000}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, {
+                        timeoutMs: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">
+                    Arguments (JSON)
+                  </label>
+                  <textarea
+                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background min-h-[140px] font-mono text-xs"
+                    value={selectedStep.arguments || "{\n  \n}"}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { arguments: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="rounded-lg border border-muted p-3">
+                  <div className="text-xs font-medium mb-2">Tool Schema</div>
+                  <pre className="text-[11px] leading-5 whitespace-pre-wrap break-words text-muted-foreground">
+                    {selectedMcpTool
+                      ? JSON.stringify(selectedMcpTool.inputSchema, null, 2)
+                      : "Select an MCP tool to inspect its input schema."}
+                  </pre>
+                </div>
+              </>
             )}
 
             {selectedStep.type === "Tool" && selectedStep.tool === "email" && (

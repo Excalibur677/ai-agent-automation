@@ -123,7 +123,7 @@ export default function LogsPage() {
       logScope: "system",
       status: `${recentErrors.length} recent error(s)`,
       recentActivity: recentErrors.map((l) => ({ type: "workflow" as const, name: l.message.slice(0, 80), status: "error" })),
-      logsSummary: recentErrors.map((l) => ({ level: l.level, message: l.message, time: l.createdAt })),
+      logsSummary: recentErrors.map((l) => ({ level: "error", message: l.message, time: l.createdAt })),
     });
     return () => clearContext();
   }, [loading, logs.length]);

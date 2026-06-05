@@ -6,6 +6,7 @@ const { runLLM } = require("./llmAdapter");
 const { runGitHub } = require("../integrations/github");
 const { runSlack } = require("../integrations/slack");
 const { runDiscord } = require("../integrations/discord");
+const { invokeTool: invokeMcpTool } = require("../mcp/executionAdapter");
 require("dotenv").config();
 
 function resolveWorkflowFilePath(filePath) {
@@ -566,6 +567,52 @@ ${rawOutput}
         success: true,
         timestamp: new Date(),
       };
+    }
+
+    // ----- MCP -----
+    if (step.type === "mcp") {
+      try {
+        const execution = await invokeMcpTool({
+          userId: context.userId,
+          serverId: step.serverId,
+          toolName: step.toolName,
+          argumentsInput: step.arguments,
+          context,
+          interpolate,
+          timeoutMs: step.timeoutMs,
+        });
+
+        return {
+          stepId: step.stepId || null,
+          type: "mcp",
+          tool: "mcp",
+          input: {
+            serverId: step.serverId,
+            toolName: step.toolName,
+            arguments: execution.args,
+          },
+          output: execution.result,
+          serverId: step.serverId,
+          toolName: step.toolName,
+          success: true,
+          timestamp: new Date(),
+        };
+      } catch (err) {
+        return {
+          stepId: step.stepId || null,
+          type: "mcp",
+          tool: "mcp",
+          input: {
+            serverId: step.serverId,
+            toolName: step.toolName,
+          },
+          output: err.message,
+          serverId: step.serverId,
+          toolName: step.toolName,
+          success: false,
+          timestamp: new Date(),
+        };
+      }
     }
 
     // ----- GITHUB -----
