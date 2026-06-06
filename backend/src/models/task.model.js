@@ -117,6 +117,11 @@ const TaskSchema = new mongoose.Schema(
     attempts: {
       type: Number,
       default: 0
+    },
+    
+    retryHistory: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: []
     }
   },
   { timestamps: true }
