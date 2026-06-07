@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState, FormEvent, useCallback, memo, useMemo } from "react";
+import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +54,25 @@ import {
 import Link from "next/link";
 import { FormEvent, memo, useCallback, useEffect, useState } from "react";
 
+// ─── Filter Utilities ──────────────────────────────────────────────
+function useDebounce<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
+const STATUS_OPTIONS = ["all", "idle", "running", "failed", "completed"];
+const SORT_OPTIONS = [
+  { value: "newest", label: "Recently Created" }, // Renamed to match issue
+  { value: "updated", label: "Recently Updated" }, // Added new option
+  { value: "oldest", label: "Oldest first" },
+  { value: "alphabetical", label: "A → Z" },
+];
+// ───────────────────────────────────────────────────────────────────
+
 type Agent = {
   _id: string;
   name: string;
@@ -63,6 +84,8 @@ interface Workflow {
   description?: string;
   status: "idle" | "running" | "failed" | "completed";
   agentId?: string;
+  createdAt?: string;
+  updatedAt?: string; // Added updatedAt
 }
 
 type Template = {
@@ -236,6 +259,18 @@ const WorkflowCard = memo(
               )}
             </div>
 
+          <DropdownMenuContent align="end">
+            <Link href={`/workflows/${workflow._id}/builder`}>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(workflow);
+                }}
+              >
+                Edit Workflow Details
+              </DropdownMenuItem>
+            </Link>
+            <DropdownMenuItem
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -344,6 +379,12 @@ export default function WorkflowsPage() {
   const { setContext, clearContext } = useAssistantContext();
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // ─── Filter State ───
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
+  const debouncedQuery = useDebounce(query, 300);
+
   const fetchAgents = useCallback(async () => {
     const res = await fetch(apiUrl("/agents"), {
       headers: {
@@ -369,7 +410,13 @@ export default function WorkflowsPage() {
         },
       });
       const data = await res.json();
-      setWorkflows(data.workflows || []);
+      
+      // POINT 3 FIX: Safely extract array regardless of API wrapper
+      const workflowsArray = Array.isArray(data) 
+        ? data 
+        : (data.workflows || data.data || []);
+        
+      setWorkflows(workflowsArray);
     } catch (err) {
       console.error("Failed to fetch workflows:", err);
     } finally {
@@ -377,38 +424,26 @@ export default function WorkflowsPage() {
     }
   }, []);
 
-  const handleDeleteWorkflow = useCallback(
-    async (id: string) => {
-      const confirmed = confirm("Delete this workflow? This cannot be undone.");
-      if (!confirmed) return;
-      try {
-        const res = await fetch(apiUrl(`/workflows/${id}`), {
-          method: "DELETE",
-          headers: {
-            Authorization: "Bearer " + (localStorage.getItem("token") ?? ""),
-          },
-        });
-        if (!res.ok) {
-          addToast({
-            type: "error",
-            title: "Failed to delete workflow",
-            description:
-              "There was an error deleting the workflow. Please try again.",
-          });
-          return;
-        }
-        addToast({
-          type: "success",
-          title: "Workflow deleted",
-          description: "Your workflow was deleted successfully.",
-        });
-        fetchWorkflows();
-      } catch (err) {
-        console.error("Delete failed:", err);
-      }
-    },
-    [addToast, fetchWorkflows]
-  );
+  const handleDeleteWorkflow = useCallback(async (id: string) => {
+    const confirmed = confirm("Delete this workflow? This cannot be undone.");
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(apiUrl(`/workflows/${id}`), {
+        method: "DELETE",
+        headers: {
+          Authorization: "Bearer " + (localStorage.getItem("token") ?? ""),
+        },
+      });
+
+      if (!res.ok) throw new Error("Failed");
+
+      addToast({ type: "success", title: "Workflow deleted" });
+      fetchWorkflows();
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  }, [addToast, fetchWorkflows]);
 
   useEffect(() => {
     fetchWorkflows();
@@ -464,6 +499,51 @@ export default function WorkflowsPage() {
     setEditingWorkflow(workflow);
   }, []);
 
+  // ─── Filter Logic ───
+  const filteredWorkflows = useMemo(() => {
+    let result = [...workflows];
+
+    if (debouncedQuery.trim()) {
+      const q = debouncedQuery.toLowerCase();
+      result = result.filter(
+        (w) => w.name?.toLowerCase().includes(q) || w.description?.toLowerCase().includes(q)
+      );
+    }
+
+    if (statusFilter !== "all") {
+      result = result.filter((w) => w.status === statusFilter);
+    }
+
+    result.sort((a, b) => {
+      // 1. Handle "Recently Updated" sorting
+      if (sortBy === "updated") {
+        // Fallback: If updatedAt is missing, use createdAt. If both missing, use MongoID.
+        const updatedA = a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : parseInt(a._id.substring(0, 8), 16));
+        const updatedB = b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : parseInt(b._id.substring(0, 8), 16));
+        return updatedB - updatedA; // Sort descending (newest updates first)
+      }
+
+      // 2. Handle standard Created dates (newest/oldest)
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : parseInt(a._id.substring(0, 8), 16);
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : parseInt(b._id.substring(0, 8), 16);
+
+      if (sortBy === "newest") return dateB - dateA;
+      if (sortBy === "oldest") return dateA - dateB;
+      if (sortBy === "alphabetical") return (a.name || "").localeCompare(b.name || "");
+      return 0;
+    });
+
+    return result;
+  }, [workflows, debouncedQuery, statusFilter, sortBy]);
+
+  const hasActiveFilters = query || statusFilter !== "all" || sortBy !== "newest";
+
+  function clearFilters() {
+    setQuery("");
+    setStatusFilter("all");
+    setSortBy("newest");
+  }
+
   return (
     <AuthGuard>
       <div className="flex min-h-screen">
@@ -502,6 +582,7 @@ export default function WorkflowsPage() {
             {loading ? (
               <p className="opacity-70">Loading workflows...</p>
             ) : workflows.length === 0 ? (
+              // Hard Empty State (No workflows exist in database at all)
               <div className="py-12 max-w-2xl mx-auto">
                 <Empty>
                   <EmptyHeader>
@@ -530,19 +611,93 @@ export default function WorkflowsPage() {
                 </Empty>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {workflows.map((workflow) => (
-                  <WorkflowCard
-                    key={workflow._id}
-                    workflow={workflow}
-                    agentName={getAgentName(workflow.agentId)}
-                    isCopied={copiedId === workflow._id}
-                    onCopy={copyId}
-                    onEdit={handleEditWorkflow}
-                    onDelete={handleDeleteWorkflow}
-                    onUpdate={fetchWorkflows}
-                  />
-                ))}
+              // Workflows exist! Show the new Toolbar and Grid
+              <div className="space-y-6">
+                
+                {/* ─── Control Toolbar ─── */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="relative flex-1">
+                    <svg
+                      className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                    </svg>
+                    <Input
+                      type="text"
+                      placeholder="Search workflows..."
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      className="pl-9 bg-background"
+                    />
+                  </div>
+
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 capitalize"
+                  >
+                    {STATUS_OPTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {s === "all" ? "All statuses" : s}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  >
+                    {SORT_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    Showing {filteredWorkflows.length} of {workflows.length} workflows
+                  </span>
+                  {hasActiveFilters && (
+                    <button onClick={clearFilters} className="text-primary hover:underline">
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+
+                {/* ─── Filtered Grid or Empty State ─── */}
+                {filteredWorkflows.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
+                    <p className="text-sm font-medium">No workflows found</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Try adjusting your search or filters.
+                    </p>
+                    <Button variant="ghost" size="sm" className="mt-4" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {filteredWorkflows.map((workflow) => (
+                      <WorkflowCard
+                        key={workflow._id}
+                        workflow={workflow}
+                        agentName={getAgentName(workflow.agentId)}
+                        isCopied={copiedId === workflow._id}
+                        onCopy={copyId}
+                        onEdit={handleEditWorkflow}
+                        onDelete={handleDeleteWorkflow}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
