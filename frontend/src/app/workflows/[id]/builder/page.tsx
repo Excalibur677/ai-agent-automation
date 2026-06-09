@@ -29,134 +29,14 @@ import { apiUrl } from "@/lib/api";
 
 /* ---------------- TYPES ---------------- */
 
-type StepType =
-  | "LLM"
-  | "HTTP"
-  | "Delay"
-  | "Tool"
-  | "MCP"
-  | "Document"
-  | "Condition"
-  | "Switch"
-  | "GitHub"
-  | "Slack"
-  | "Discord";
-type ToolType = "email" | "file" | "browser";
-
-type WorkflowStep = {
-  id: string;
-  type: StepType;
-  name: string;
-
-  position?: {
-    x: number;
-    y: number;
-  };
-
-  // LLM
-  useMemory?: boolean;
-  memoryTopK?: number;
-  prompt?: string;
-
-  // HTTP
-  url?: string;
-  method?: "GET" | "POST" | "PUT" | "DELETE";
-  body?: string;
-
-  // Delay
-  delay?: number;
-
-  // 🔥 Tool
-  tool?: ToolType;
-
-  // Email
-  to?: string;
-  subject?: string;
-  text?: string;
-  html?: string;
-
-  // File
-  action?: string;
-  path?: string;
-  content?: string;
-
-  // Browser
-  code?: string;
-
-  // MCP
-  serverId?: string;
-  toolName?: string;
-  arguments?: string;
-  timeoutMs?: number;
-
-  // Document RAG
-  documentId?: string;
-  query?: string;
-  topK?: number;
-
-  // CONDITION (NEW SYSTEM)
-  conditionType?: "boolean" | "sentiment" | "contains";
-  operator?: string;
-  value?: string;
-
-  trueTarget?: string;
-  falseTarget?: string;
-
-  // GitHub
-  owner?: string;
-  repo?: string;
-  issue_number?: string;
-  comment?: string;
-  title?: string;
-
-  // SWITCH
-  cases?: {
-    value: string; // what to match
-    target: string; // stepId
-  }[];
-
-  defaultTarget?: string;
-};
-
-type BackendStep = {
-  name: string;
-  stepId: string;
-  type:
-    | "LLM"
-    | "HTTP"
-    | "Delay"
-    | "Tool"
-    | "llm"
-    | "http"
-    | "delay"
-    | "mcp"
-    | "condition"
-    | "switch"
-    | "document_query"
-    | "file"
-    | "email"
-    | "browser"
-    | "github"
-    | "slack"
-    | "discord";
-
-  prompt?: string;
-
-  url?: string;
-  method?: "GET" | "POST" | "PUT" | "DELETE";
-  body?: string;
-
-  seconds?: number;
-};
-
-type WorkflowResponse = {
-  _id: string;
-  name: string;
-  metadata?: {
-    steps?: BackendStep[];
-    edges?: any[];
-  };
-};
+import {
+  StepType,
+  ToolType,
+  WorkflowNode as WorkflowStep,
+  BackendStep,
+  WorkflowPayload as WorkflowResponse,
+  WorkflowEdge,
+} from "@/types/workflow";
 
 /* ---------------- UTILS ---------------- */
 
@@ -246,7 +126,7 @@ export default function WorkflowBuilderPage() {
   const [mcpTools, setMcpTools] = useState<any[]>([]);
   const [builderMode, setBuilderMode] = useState<"list" | "visual">("list");
   const { addToast } = useToast();
-  const [edges, setEdges] = useState<any[]>([]);
+  const [edges, setEdges] = useState<WorkflowEdge[]>([]);
   const { setContext, clearContext } = useAssistantContext();
   const [savedStepsSnapshot, setSavedStepsSnapshot] = useState<string>("[]");
   const [savedEdgesSnapshot, setSavedEdgesSnapshot] = useState<string>("[]");
@@ -467,7 +347,7 @@ export default function WorkflowBuilderPage() {
     ]);
   }
 
-  function enrichStepsWithEdges(steps: WorkflowStep[], edges: any[]) {
+  function enrichStepsWithEdges(steps: WorkflowStep[], edges: WorkflowEdge[]) {
     return steps.map((step) => {
       if (step.type === "Switch") {
         const outgoing = edges.filter((e) => e.source === step.id);

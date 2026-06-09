@@ -5,33 +5,23 @@ import ReactFlow, {
   Background,
   addEdge,
   useNodesState,
-  useEdgesState,
   Connection,
   Node,
   NodeDragHandler,
+  Edge,
+  applyNodeChanges,
+  applyEdgeChanges,
+  NodeChange,
+  EdgeChange,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { apiUrl } from "@/lib/api";
 import { generateNodeId, generateEdgeId } from "@/utils/ids";
 import { duplicateNodesSafely } from "@/utils/graphValidation";
-import { Edge, applyNodeChanges, applyEdgeChanges } from "reactflow";
 import { X, AlertTriangle } from "lucide-react";
 import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
-
-type StepType =
-  | "LLM"
-  | "HTTP"
-  | "Delay"
-  | "Tool"
-  | "MCP"
-  | "Document"
-  | "Condition"
-  | "Switch"
-  | "GitHub"
-  | "Slack"
-  | "Discord";
-  
+import { StepType, WorkflowNode, WorkflowEdge } from "@/types/workflow";
 
 type StepNode = {
   id: string;
@@ -41,11 +31,6 @@ type StepNode = {
     label: React.ReactElement;
   };
   style?: React.CSSProperties;
-};
-
-type CustomEdge = Edge & {
-  condition?: "true" | "false";
-  caseValue?: string;
 };
 
 const EDGE_STYLE = { strokeWidth: 2 };
@@ -71,7 +56,7 @@ function getNodeColor(type: string) {
   }
 }
 
-function buildNodePreview(step: any, edges: CustomEdge[], allSteps: any[]) {
+function buildNodePreview(step: WorkflowNode | undefined, edges: WorkflowEdge[], allSteps: WorkflowNode[]) {
   const rows: { name: string; type: string }[] = [];
 
   if (!step) return rows;
@@ -112,11 +97,11 @@ function buildNodePreview(step: any, edges: CustomEdge[], allSteps: any[]) {
   }
 
   if (step.type === "Condition") {
-    const trueEdge = (edges as CustomEdge[]).find(
+    const trueEdge = edges.find(
       (e) => e.source === step.id && e.condition === "true",
     );
 
-    const falseEdge = (edges as CustomEdge[]).find(
+    const falseEdge = edges.find(
       (e) => e.source === step.id && e.condition === "false",
     );
 
@@ -128,12 +113,12 @@ function buildNodePreview(step: any, edges: CustomEdge[], allSteps: any[]) {
   }
 
   if (step.type === "Switch") {
-    const outgoing = (edges as CustomEdge[]).filter(
+    const outgoing = edges.filter(
       (e) => e.source === step.id,
     );
 
     outgoing.forEach((edge) => {
-      const e = edge as CustomEdge;
+      const e = edge;
 
       const targetStep = allSteps.find((s) => s.id === e.target);
 
@@ -148,9 +133,8 @@ function buildNodePreview(step: any, edges: CustomEdge[], allSteps: any[]) {
 }
 
 function computeNodes(
-  steps: any[],
-  flowEdges: CustomEdge[],
-  onDeleteNode: (id: string) => void,
+  steps: WorkflowNode[],
+  flowEdges: WorkflowEdge[],
   invalidNodeIds: Set<string> = new Set()
 ): StepNode[] {
   if (!steps?.length) return [];
@@ -182,7 +166,10 @@ function computeNodes(
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onDeleteNode(step.id);
+                    const deleteEvent = new CustomEvent("delete-workflow-node", {
+                      detail: { nodeId: step.id },
+                    });
+                    window.dispatchEvent(deleteEvent);
                   }}
                   className="text-red-500 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition"
                 >
@@ -240,20 +227,20 @@ export default function VisualBuilder({
   onSave,
   invalidNodeIds = [],
 }: {
-  steps: any[];
-  setSteps: React.Dispatch<React.SetStateAction<any[]>>;
-  edges: any[];
-  onEdgesChange: (edges: any[]) => void;
+  steps: WorkflowNode[];
+  setSteps: React.Dispatch<React.SetStateAction<WorkflowNode[]>>;
+  edges: WorkflowEdge[];
+  onEdgesChange: (edges: WorkflowEdge[]) => void;
   onSave?: () => void;
   invalidNodeIds?: string[];
 }) {
   usePerformanceMonitor("VisualBuilder");
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const historyRef = useRef<{ steps: any[]; edges: CustomEdge[] }[]>([]);
-  const futureRef = useRef<{ steps: any[]; edges: CustomEdge[] }[]>([]);
+  const historyRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
+  const futureRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
   const [mcpTools, setMcpTools] = useState<any[]>([]);
-  const [flowEdges, setFlowEdges] = useState<CustomEdge[]>(() => edges || []);
+  const [flowEdges, setFlowEdges] = useState<WorkflowEdge[]>(() => edges || []);
   const selectedStep = steps.find((s) => s.id === selectedNode?.id);
   const selectedMcpTool = mcpTools.find(
     (tool) =>
@@ -277,16 +264,13 @@ export default function VisualBuilder({
       );
       setSelectedNode((prev) => (prev?.id === nodeId ? null : prev));
     },
-    [setSteps],
+    [setSteps, flowEdges],
   );
 
-  const [computedNodes, setComputedNodes] = useState<Node[]>([]);
-
-  useEffect(() => {
+  const computedNodes = useMemo(() => {
     const nodesWithErrorsSet = new Set(invalidNodeIds);
-    
-    setComputedNodes(computeNodes(steps, flowEdges, deleteNode, nodesWithErrorsSet));
-  }, [steps, flowEdges, deleteNode, invalidNodeIds]);
+    return computeNodes(steps, flowEdges, nodesWithErrorsSet);
+  }, [steps, flowEdges, invalidNodeIds]);
 
   const [nodes, setNodes, _onNodesChange] = useNodesState(computedNodes);
 
@@ -298,6 +282,17 @@ export default function VisualBuilder({
       }),
     );
   }, [computedNodes, setNodes]);
+
+  useEffect(() => {
+    const handleNodeDelete = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.nodeId) {
+        deleteNode(customEvent.detail.nodeId);
+      }
+    };
+    window.addEventListener("delete-workflow-node", handleNodeDelete);
+    return () => window.removeEventListener("delete-workflow-node", handleNodeDelete);
+  }, [deleteNode]);
 
   /* ---------- KEYBOARD SHORTCUT DUPLICATION SAFETY ---------- */
   useEffect(() => {
@@ -400,7 +395,7 @@ export default function VisualBuilder({
 
   /* ---------- EVENTS ---------- */
 
-  const onNodeClick = useCallback((_: any, node: Node) => {
+  const onNodeClick = useCallback((_: React.MouseEvent | null, node: Node) => {
     setSelectedNode(node);
   }, []);
 
@@ -409,7 +404,7 @@ export default function VisualBuilder({
     futureRef.current = [];
   }, [steps, flowEdges]);
 
-  const handleEdgesDelete = useCallback((deletedEdges: any[]) => {
+  const handleEdgesDelete = useCallback((deletedEdges: WorkflowEdge[]) => {
     historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
     futureRef.current = [];
     setFlowEdges((eds) =>
@@ -417,7 +412,7 @@ export default function VisualBuilder({
     );
   }, [steps, flowEdges]);
 
-  const onNodesChange = useCallback((changes: any) => {
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((nds) => {
       const updated = applyNodeChanges(changes, nds);
 
@@ -445,14 +440,14 @@ export default function VisualBuilder({
     });
   }, [setNodes, setSteps]);
 
-  const handleEdgesChange = useCallback((changes: any) => {
+  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
     const hasStructuralChange = changes.some(
-      (c: any) => c.type !== "select" && c.type !== "reset",
+      (c) => c.type !== "select" && c.type !== "reset",
     );
 
     if (!hasStructuralChange) return;
 
-    setFlowEdges((eds) => applyEdgeChanges(changes, eds));
+    setFlowEdges((eds) => applyEdgeChanges(changes, eds) as WorkflowEdge[]);
   }, []);
 
   const onConnect = useCallback((params: Connection) => {
@@ -502,26 +497,28 @@ export default function VisualBuilder({
       let filtered = eds;
 
       if (isCondition && condition) {
-        filtered = (eds as CustomEdge[]).filter(
+        filtered = eds.filter(
           (e) => !(e.source === params.source && e.condition === condition),
         );
       }
 
-      const newEdge = {
+      const newEdge: WorkflowEdge = {
         id: generateEdgeId(), // ✅ Guaranteed distinct execution keys
         ...params,
+        source: params.source ?? "",
+        target: params.target ?? "",
         animated: true,
         style: EDGE_STYLE,
         label: caseValue || condition?.toUpperCase() || "",
-        condition,
-        caseValue,
+        condition: condition ?? undefined,
+        caseValue: caseValue ?? undefined,
       };
 
       return addEdge(newEdge, filtered);
     });
   }, [steps, flowEdges]);
 
-  const updateStep = useCallback((stepId: string, patch: any) => {
+  const updateStep = useCallback((stepId: string, patch: Partial<WorkflowNode>) => {
     historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
     futureRef.current = [];
     setSteps((prev) =>
@@ -529,7 +526,7 @@ export default function VisualBuilder({
     );
   }, [steps, flowEdges, setSteps]);
 
-  const updateNodeLabel = useCallback((stepId: string, name: string, type: string) => {
+  const updateNodeLabel = useCallback((stepId: string, name: string, type: StepType) => {
     const step = steps.find((s) => s.id === stepId);
     if (!step) return;
 
@@ -549,7 +546,10 @@ export default function VisualBuilder({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          deleteNode(stepId);
+                          const deleteEvent = new CustomEvent("delete-workflow-node", {
+                            detail: { nodeId: stepId },
+                          });
+                          window.dispatchEvent(deleteEvent);
                         }}
                         className="text-red-500 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition"
                       >
@@ -581,7 +581,7 @@ export default function VisualBuilder({
           : n,
       ),
     );
-  }, [steps, flowEdges, deleteNode, setNodes]);
+  }, [steps, flowEdges, setNodes]);
 
   useEffect(() => {
     async function fetchDocuments() {

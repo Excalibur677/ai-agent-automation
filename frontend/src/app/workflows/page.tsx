@@ -41,6 +41,7 @@ import { motion } from "framer-motion";
 import { useAssistantContext } from "@/context/assistant-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
+import { WorkflowPayload as Workflow } from "@/types/workflow";
 import {
   Bot,
   Check,
@@ -75,16 +76,6 @@ type Agent = {
   _id: string;
   name: string;
 };
-
-interface Workflow {
-  _id: string;
-  name: string;
-  description?: string;
-  status: "idle" | "running" | "failed" | "completed";
-  agentId?: string;
-  createdAt?: string;
-  updatedAt?: string; // Added updatedAt
-}
 
 type Template = {
   id: string;
@@ -265,6 +256,7 @@ const WorkflowCard = memo(
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <Link href={`/workflows/${workflow._id}/builder`}>
+<<<<<<< HEAD
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
@@ -273,6 +265,21 @@ const WorkflowCard = memo(
                     Edit Workflow Details
                   </DropdownMenuItem>
                 </Link>
+=======
+                  <DropdownMenuItem>
+                    Configure Steps
+                  </DropdownMenuItem>
+                </Link>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onEdit(workflow);
+                  }}
+                >
+                  Edit Workflow Details
+                </DropdownMenuItem>
+>>>>>>> fdf81cd (fix: remove duplicate rollback snapshot and make versioning concurrency-safe)
                 <DropdownMenuItem
                   className="text-destructive"
                   onClick={(e) => {

@@ -1,4 +1,5 @@
 import { generateNodeId, generateEdgeId } from '@/utils/ids';
+import { WorkflowNode, WorkflowEdge } from '@/types/workflow';
 
 /**
  * Deep clones an array of workflow nodes and ensures every node 
@@ -6,16 +7,17 @@ import { generateNodeId, generateEdgeId } from '@/utils/ids';
  * Now returns both the cloned steps and an internal translation map 
  * so edge replication can preserve internal connections.
  */
-export const duplicateNodesSafely = (nodesToDuplicate: any[]): { clonedSteps: any[], idMap: Map<string, string> } => {
+export const duplicateNodesSafely = (
+  nodesToDuplicate: WorkflowNode[]
+): { clonedSteps: WorkflowNode[]; idMap: Map<string, string> } => {
   const idMap = new Map<string, string>();
   
   const clonedSteps = nodesToDuplicate.map((node) => {
-    const clonedNode = JSON.parse(JSON.stringify(node));
+    const clonedNode = JSON.parse(JSON.stringify(node)) as WorkflowNode;
     const newId = generateNodeId(clonedNode.type);
     
     idMap.set(node.id, newId);
     clonedNode.id = newId;
-    clonedNode.selected = false;
     
     if (clonedNode.position) {
       clonedNode.position.x += 40;
@@ -33,10 +35,10 @@ export const duplicateNodesSafely = (nodesToDuplicate: any[]): { clonedSteps: an
  * NOW tracks an internal registry to guard against duplicate IDs embedded *inside* the incoming file itself.
  */
 export const sanitizeImportedGraph = (
-  importedNodes: any[], 
-  importedEdges: any[], 
-  existingNodes: any[]
-) => {
+  importedNodes: WorkflowNode[], 
+  importedEdges: WorkflowEdge[], 
+  existingNodes: WorkflowNode[]
+): { sanitizedNodes: WorkflowNode[]; sanitizedEdges: WorkflowEdge[] } => {
   const existingIds = new Set((existingNodes || []).map((n) => n.id));
   const seenInImport = new Set<string>();
   const idMap = new Map<string, string>();
@@ -55,7 +57,6 @@ export const sanitizeImportedGraph = (
     return {
       ...node,
       id: newId,
-      selected: false,
     };
   });
 
@@ -78,7 +79,10 @@ export const sanitizeImportedGraph = (
  * Structural & Step Validation Layer
  * Inspects the workflow graph for unreachable nodes, missing fields, and invalid branches.
  */
-export const validateGraphIntegrity = (nodes: any[], edges: any[]): { isValid: boolean; errors: string[]; invalidNodeIds: string[] } => {
+export const validateGraphIntegrity = (
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[]
+): { isValid: boolean; errors: string[]; invalidNodeIds: string[] } => {
   const errors: string[] = [];
   const nodeIds = new Set<string>();
   const invalidNodes = new Set<string>();
@@ -163,14 +167,14 @@ export const validateGraphIntegrity = (nodes: any[], edges: any[]): { isValid: b
   (nodes || []).forEach((node) => {
     const stepName = node.name || node.type;
 
-    if (node.type === "LLM" || node.type === "llm") {
+    if (node.type === "LLM") {
       if (!node.prompt || node.prompt.trim() === "") {
         errors.push(`Step Validation: LLM step '${stepName}' is missing a required prompt.`);
         invalidNodes.add(node.id);
       }
     }
 
-    if (node.type === "Tool" || node.type === "tool") {
+    if (node.type === "Tool") {
       if (!node.tool) {
         errors.push(`Step Validation: Tool step '${stepName}' has no tool type selected.`);
         invalidNodes.add(node.id);
@@ -190,7 +194,7 @@ export const validateGraphIntegrity = (nodes: any[], edges: any[]): { isValid: b
       }
     }
 
-    if (node.type === "Condition" || node.type === "condition") {
+    if (node.type === "Condition") {
         const outEdges = (edges || []).filter(e => e.source === node.id);
         const hasTrue = outEdges.some(e => e.condition === "true" || e.label?.toLowerCase() === "true");
         const hasFalse = outEdges.some(e => e.condition === "false" || e.label?.toLowerCase() === "false");
@@ -201,7 +205,7 @@ export const validateGraphIntegrity = (nodes: any[], edges: any[]): { isValid: b
         }
     }
 
-    if (node.type === "Switch" || node.type === "switch") {
+    if (node.type === "Switch") {
         const outEdges = (edges || []).filter(e => e.source === node.id);
         if (outEdges.length === 0) {
             errors.push(`Step Validation: Switch step '${stepName}' has no connected case branches.`);

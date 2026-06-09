@@ -24,6 +24,7 @@ import {
   HelpCircle,
   Cpu
 } from "lucide-react";
+import { BackendStep, WorkflowEdge } from "@/types/workflow";
 
 type VersionHistoryDialogProps = {
   workflowId: string;
@@ -32,24 +33,13 @@ type VersionHistoryDialogProps = {
   onRollbackSuccess: () => void;
 };
 
-type StepSnapshot = {
-  stepId: string;
-  type: string;
-  name?: string;
-  prompt?: string;
-  url?: string;
-  method?: string;
-  seconds?: number;
-  [key: string]: any;
-};
-
 type WorkflowSnapshot = {
   name: string;
   description?: string;
   agentId?: string | null;
   metadata?: {
-    steps?: StepSnapshot[];
-    edges?: any[];
+    steps?: BackendStep[];
+    edges?: WorkflowEdge[];
   };
 };
 
@@ -87,7 +77,7 @@ function normalizeStepType(type: string) {
   }
 }
 
-function getStepDescription(step: StepSnapshot) {
+function getStepDescription(step: BackendStep) {
   const type = (step.type || "").toLowerCase();
 
   if (step.prompt) return step.prompt.slice(0, 100);
@@ -134,8 +124,8 @@ export default function VersionHistoryDialog({
       } else {
         setSelectedVersion(null);
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to load version history");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load version history");
     } finally {
       setLoading(false);
     }
@@ -172,11 +162,11 @@ export default function VersionHistoryDialog({
       
       onRollbackSuccess();
       onOpenChange(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       addToast({
         type: "error",
         title: "Rollback Failed",
-        description: err.message || "Something went wrong.",
+        description: err instanceof Error ? err.message : "Something went wrong.",
       });
     } finally {
       setRollbackLoading(false);

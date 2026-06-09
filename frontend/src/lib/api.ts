@@ -50,9 +50,9 @@ export async function api<T>(
     } satisfies ApiError;
   }
 
-  let data: any;
+  let data: T;
   try {
-    data = await res.json();
+    data = await res.json() as T;
   } catch {
     throw {
       status: res.status,
@@ -60,10 +60,10 @@ export async function api<T>(
     } satisfies ApiError;
   }
 
-  if (!res.ok || data?.ok === false) {
+  if (!res.ok || (data as any)?.ok === false) {
     throw {
       status: res.status,
-      message: data?.error || "Request failed",
+      message: (data as any)?.error || "Request failed",
     } satisfies ApiError;
   }
 

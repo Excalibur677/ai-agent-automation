@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
+import { WorkflowPayload as Workflow, BackendStep as WorkflowStep } from "@/types/workflow";
 
 interface CreateTaskModalProps {
   workflowId: string;
@@ -60,27 +61,7 @@ interface Task {
   stepResults?: StepResult[];
 }
 
-interface WorkflowStep {
-  stepId: string;
-  type: string;
-  name?: string;
-  prompt?: string;
-  config?: string;
-}
-
-type TaskRef = string | { _id: string };
-
-interface Workflow {
-  _id: string;
-  name: string;
-  description?: string;
-  status: string;
-  agentId?: string;
-  tasks?: TaskRef[]; // ✅ FIX
-  metadata?: {
-    steps?: WorkflowStep[];
-  };
-}
+// Centralized types imported from @/types/workflow
 
 function getStepIcon(status: string) {
   switch (status) {
@@ -144,7 +125,7 @@ function normalizeStepType(type: string) {
   }
 }
 
-function getStepDescription(step: any) {
+function getStepDescription(step: WorkflowStep) {
   const type = (step.type || "").toLowerCase();
 
   /* ---------- LLM ---------- */
@@ -204,7 +185,7 @@ export default function WorkflowDetailPage() {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [tasks, setTasks] = useState<string[]>([]);
   const [latestTask, setLatestTask] = useState<Task | null>(null);
-  const [agents, setAgents] = useState<any[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [agentMap, setAgentMap] = useState<Record<string, string>>({});
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);

@@ -74,8 +74,11 @@ function DashboardPageInner() {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    setNow(Date.now());
-    setIsMounted(true);
+    const timer = setTimeout(() => {
+      setIsMounted(true);
+      setNow(Date.now());
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const { data: stats, loading: statsLoading } = useApi<DashboardStats>("/dashboard/stats");

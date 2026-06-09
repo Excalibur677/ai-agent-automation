@@ -76,6 +76,49 @@ async function createVersionIfNeeded(workflow, userId, note = "") {
 }
 
 /**
+ * Create a retry-safe workflow version snapshot during rollback to prevent duplicate key errors.
+ */
+async function createRollbackSnapshot(workflow, userId = null, note = "") {
+  const workflowSnapshot = {
+    name: workflow.name,
+    description: workflow.description || "",
+    agentId: workflow.agentId || null,
+    metadata: {
+      steps: JSON.parse(JSON.stringify(workflow.metadata?.steps || [])),
+      edges: JSON.parse(JSON.stringify(workflow.metadata?.edges || []))
+    }
+  };
+
+  const latestVersion = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({ versionNumber: -1 });
+  let nextVersionNumber = latestVersion ? latestVersion.versionNumber + 1 : 1;
+
+  let attempts = 0;
+  const maxAttempts = 4; // 1 initial attempt + 3 retries
+  while (attempts < maxAttempts) {
+    try {
+      const newVersion = await WorkflowVersion.create({
+        workflowId: workflow._id,
+        versionNumber: nextVersionNumber,
+        workflowSnapshot,
+        createdBy: userId || null,
+        note
+      });
+      return newVersion;
+    } catch (err) {
+      if (err.code === 11000 && attempts < maxAttempts - 1) {
+        attempts++;
+        const currentLatest = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({ versionNumber: -1 });
+        nextVersionNumber = currentLatest ? currentLatest.versionNumber + 1 : 1;
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw new Error("Failed to create rollback snapshot: retries exhausted due to concurrent version conflicts");
+}
+
+/**
  * Get all versions for a workflow, sorted by versionNumber descending.
  */
 async function listVersions(workflowId) {
@@ -103,28 +146,7 @@ async function rollback(workflow, versionId, userId) {
   }
 
   // 1. Snapshot current configuration state to save as a pre-rollback version
-  const currentSnapshot = {
-    name: workflow.name,
-    description: workflow.description || "",
-    agentId: workflow.agentId || null,
-    metadata: {
-      steps: JSON.parse(JSON.stringify(workflow.metadata?.steps || [])),
-      edges: JSON.parse(JSON.stringify(workflow.metadata?.edges || []))
-    }
-  };
-
-  // Find latest version to calculate next version number
-  const latestVersion = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({ versionNumber: -1 });
-  const preRollbackVersionNumber = latestVersion ? latestVersion.versionNumber + 1 : 1;
-
-  // Save pre-rollback snapshot
-  await WorkflowVersion.create({
-    workflowId: workflow._id,
-    versionNumber: preRollbackVersionNumber,
-    workflowSnapshot: currentSnapshot,
-    createdBy: userId || null,
-    note: `Pre-rollback to v${selectedVersion.versionNumber}`
-  });
+  await createRollbackSnapshot(workflow, userId, `Pre-rollback to v${selectedVersion.versionNumber}`);
 
   // 2. Restore selected snapshot configuration
   const targetSnapshot = selectedVersion.workflowSnapshot;
