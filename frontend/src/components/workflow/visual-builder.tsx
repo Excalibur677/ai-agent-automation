@@ -21,7 +21,7 @@ import { generateNodeId, generateEdgeId } from "@/utils/ids";
 import { duplicateNodesSafely } from "@/utils/graphValidation";
 import { X, AlertTriangle } from "lucide-react";
 import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
-import { StepType, WorkflowNode, WorkflowEdge } from "@/types/workflow";
+import { StepType, ToolType, WorkflowNode, WorkflowEdge, WorkflowDocument, McpTool } from "@/types/workflow";
 
 type StepNode = {
   id: string;
@@ -238,9 +238,9 @@ export default function VisualBuilder({
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const historyRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
   const futureRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [mcpTools, setMcpTools] = useState<any[]>([]);
-  const [flowEdges, setFlowEdges] = useState<WorkflowEdge[]>(() => edges || []);
+  const [documents, setDocuments] = useState<WorkflowDocument[]>([]);
+  const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
+  const [flowEdges, setFlowEdges] = useState<Edge[]>(() => (edges as unknown as Edge[]) || []);
   const selectedStep = steps.find((s) => s.id === selectedNode?.id);
   const selectedMcpTool = mcpTools.find(
     (tool) =>
@@ -249,13 +249,13 @@ export default function VisualBuilder({
   );
 
   useEffect(() => {
-    onEdgesChange(flowEdges);
+    onEdgesChange(flowEdges as unknown as WorkflowEdge[]);
   }, [flowEdges, onEdgesChange]);
 
   const deleteNode = useCallback(
     (nodeId: string) => {
       setSteps((prev) => {
-        historyRef.current.push({ steps: [...prev], edges: [...flowEdges] });
+        historyRef.current.push({ steps: [...prev], edges: [...flowEdges] as unknown as WorkflowEdge[] });
         futureRef.current = [];
         return prev.filter((s) => s.id !== nodeId);
       });
@@ -269,7 +269,7 @@ export default function VisualBuilder({
 
   const computedNodes = useMemo(() => {
     const nodesWithErrorsSet = new Set(invalidNodeIds);
-    return computeNodes(steps, flowEdges, nodesWithErrorsSet);
+    return computeNodes(steps, flowEdges as unknown as WorkflowEdge[], nodesWithErrorsSet);
   }, [steps, flowEdges, invalidNodeIds]);
 
   const [nodes, setNodes, _onNodesChange] = useNodesState(computedNodes);
@@ -323,7 +323,7 @@ export default function VisualBuilder({
           target: idMap.get(edge.target) || edge.target,
         }));
 
-        historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+        historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
         futureRef.current = [];
         setSteps((prev) => [...prev, ...clonedSteps]);
         if (clonedEdges.length > 0) {
@@ -364,9 +364,9 @@ export default function VisualBuilder({
         e.preventDefault();
         if (historyRef.current.length === 0) return;
         const snapshot = historyRef.current.pop()!;
-        futureRef.current.push({ steps, edges: flowEdges });
+        futureRef.current.push({ steps, edges: flowEdges as unknown as WorkflowEdge[] });
         setSteps(snapshot.steps);
-        setFlowEdges(snapshot.edges);
+        setFlowEdges(snapshot.edges as unknown as Edge[]);
         setSelectedNode(null);
         return;
       }
@@ -375,9 +375,9 @@ export default function VisualBuilder({
         e.preventDefault();
         if (futureRef.current.length === 0) return;
         const snapshot = futureRef.current.pop()!;
-        historyRef.current.push({ steps, edges: flowEdges });
+        historyRef.current.push({ steps, edges: flowEdges as unknown as WorkflowEdge[] });
         setSteps(snapshot.steps);
-        setFlowEdges(snapshot.edges);
+        setFlowEdges(snapshot.edges as unknown as Edge[]);
         setSelectedNode(null);
         return;
       }
@@ -400,12 +400,12 @@ export default function VisualBuilder({
   }, []);
 
   const onNodeDragStart: NodeDragHandler = useCallback((_event, _node) => {
-    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
     futureRef.current = [];
   }, [steps, flowEdges]);
 
-  const handleEdgesDelete = useCallback((deletedEdges: WorkflowEdge[]) => {
-    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+  const handleEdgesDelete = useCallback((deletedEdges: Edge[]) => {
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
     futureRef.current = [];
     setFlowEdges((eds) =>
       eds.filter((edge) => !deletedEdges.some((d) => d.id === edge.id)),
@@ -447,7 +447,7 @@ export default function VisualBuilder({
 
     if (!hasStructuralChange) return;
 
-    setFlowEdges((eds) => applyEdgeChanges(changes, eds) as WorkflowEdge[]);
+    setFlowEdges((eds) => applyEdgeChanges(changes, eds) as Edge[]);
   }, []);
 
   const onConnect = useCallback((params: Connection) => {
@@ -481,7 +481,7 @@ export default function VisualBuilder({
       const value = userInput.trim();
 
       const alreadyExists = flowEdges.some(
-        (e) => e.source === params.source && e.caseValue === value,
+        (e) => e.source === params.source && (e as unknown as WorkflowEdge).caseValue === value,
       );
 
       if (alreadyExists) {
@@ -491,14 +491,14 @@ export default function VisualBuilder({
 
       caseValue = value;
     }
-    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
     futureRef.current = [];
     setFlowEdges((eds) => {
       let filtered = eds;
 
       if (isCondition && condition) {
         filtered = eds.filter(
-          (e) => !(e.source === params.source && e.condition === condition),
+          (e) => !((e as unknown as WorkflowEdge).source === params.source && (e as unknown as WorkflowEdge).condition === condition),
         );
       }
 
@@ -514,12 +514,12 @@ export default function VisualBuilder({
         caseValue: caseValue ?? undefined,
       };
 
-      return addEdge(newEdge, filtered);
+      return addEdge(newEdge as unknown as Edge, filtered);
     });
   }, [steps, flowEdges]);
 
   const updateStep = useCallback((stepId: string, patch: Partial<WorkflowNode>) => {
-    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
     futureRef.current = [];
     setSteps((prev) =>
       prev.map((s) => (s.id === stepId ? { ...s, ...patch } : s)),
@@ -530,7 +530,7 @@ export default function VisualBuilder({
     const step = steps.find((s) => s.id === stepId);
     if (!step) return;
 
-    const schema = buildNodePreview({ ...step, name, type }, flowEdges, steps);
+    const schema = buildNodePreview({ ...step, name, type }, flowEdges as unknown as WorkflowEdge[], steps);
 
     setNodes((nds) =>
       nds.map((n) =>
@@ -710,7 +710,7 @@ export default function VisualBuilder({
       },
     };
 
-    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
     futureRef.current = [];
     setNodes((n) => [...n, node]);
     setSteps((prev) => [
@@ -910,7 +910,7 @@ export default function VisualBuilder({
                     className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
                     value={selectedStep.method || ""}
                     onChange={(e) =>
-                      updateStep(selectedStep.id, { method: e.target.value })
+                      updateStep(selectedStep.id, { method: e.target.value as "GET" | "POST" | "PUT" | "DELETE" })
                     }
                   >
                     <option value="" disabled>Select method</option>
@@ -930,7 +930,7 @@ export default function VisualBuilder({
                   className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
                   value={selectedStep.tool || ""}
                   onChange={(e) =>
-                    updateStep(selectedStep.id, { tool: e.target.value })
+                    updateStep(selectedStep.id, { tool: e.target.value as ToolType })
                   }
                 >
                   <option value="" disabled>Select tool</option>

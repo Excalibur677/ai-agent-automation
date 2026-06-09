@@ -1,5 +1,5 @@
 import { generateNodeId, generateEdgeId } from '@/utils/ids';
-import { WorkflowNode, WorkflowEdge } from '@/types/workflow';
+import { WorkflowNode, WorkflowEdge, ValidationResult } from '@/types/workflow';
 
 /**
  * Deep clones an array of workflow nodes and ensures every node 
@@ -79,10 +79,10 @@ export const sanitizeImportedGraph = (
  * Structural & Step Validation Layer
  * Inspects the workflow graph for unreachable nodes, missing fields, and invalid branches.
  */
-export const validateGraphIntegrity = (
+export const validateGraph = (
   nodes: WorkflowNode[],
   edges: WorkflowEdge[]
-): { isValid: boolean; errors: string[]; invalidNodeIds: string[] } => {
+): ValidationResult => {
   const errors: string[] = [];
   const nodeIds = new Set<string>();
   const invalidNodes = new Set<string>();

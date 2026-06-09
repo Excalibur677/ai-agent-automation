@@ -113,6 +113,8 @@ export interface BackendStep {
     x: number;
     y: number;
   };
+  useMemory?: boolean;
+  memoryTopK?: number;
   prompt?: string;
   url?: string;
   method?: "GET" | "POST" | "PUT" | "DELETE" | string;
@@ -189,4 +191,53 @@ export interface WorkflowApiResponse {
   workflow?: WorkflowPayload;
   workflows?: WorkflowPayload[];
   error?: string;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  invalidNodeIds: string[];
+}
+
+export interface WorkflowDocument {
+  _id: string;
+  title?: string;
+  name?: string;
+}
+
+export interface McpTool {
+  id: string;
+  name: string;
+  serverId: string;
+  serverName?: string;
+  description?: string;
+  inputSchema?: Record<string, any>;
+}
+
+export interface WorkflowAgent {
+  _id: string;
+  name: string;
+  config?: {
+    model?: string;
+  };
+}
+
+export interface CreateWorkflowPayload {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateWorkflowPayload {
+  name?: string;
+  description?: string;
+  agentId?: string;
+}
+
+export interface UpdateWorkflowStepsPayload {
+  steps: BackendStep[];
+  edges: WorkflowEdge[];
+}
+
+export interface AssignAgentPayload {
+  agentId: string;
 }

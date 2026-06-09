@@ -41,7 +41,7 @@ import { motion } from "framer-motion";
 import { useAssistantContext } from "@/context/assistant-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
-import { WorkflowPayload as Workflow } from "@/types/workflow";
+import { WorkflowPayload as Workflow, WorkflowAgent as Agent } from "@/types/workflow";
 import {
   Bot,
   Check,
@@ -72,10 +72,7 @@ const SORT_OPTIONS = [
 ];
 // ───────────────────────────────────────────────────────────────────
 
-type Agent = {
-  _id: string;
-  name: string;
-};
+
 
 type Template = {
   id: string;
@@ -256,16 +253,6 @@ const WorkflowCard = memo(
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <Link href={`/workflows/${workflow._id}/builder`}>
-<<<<<<< HEAD
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation();
-                    }}
-                  >
-                    Edit Workflow Details
-                  </DropdownMenuItem>
-                </Link>
-=======
                   <DropdownMenuItem>
                     Configure Steps
                   </DropdownMenuItem>
@@ -279,7 +266,6 @@ const WorkflowCard = memo(
                 >
                   Edit Workflow Details
                 </DropdownMenuItem>
->>>>>>> fdf81cd (fix: remove duplicate rollback snapshot and make versioning concurrency-safe)
                 <DropdownMenuItem
                   className="text-destructive"
                   onClick={(e) => {
@@ -687,6 +673,7 @@ export default function WorkflowsPage() {
                         onCopy={copyId}
                         onEdit={handleEditWorkflow}
                         onDelete={handleDeleteWorkflow}
+                        onUpdate={fetchWorkflows}
                       />
                     ))}
                   </div>

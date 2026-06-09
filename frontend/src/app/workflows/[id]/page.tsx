@@ -29,22 +29,11 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
-import { WorkflowPayload as Workflow, BackendStep as WorkflowStep } from "@/types/workflow";
+import { WorkflowPayload as Workflow, BackendStep as WorkflowStep, WorkflowAgent as Agent } from "@/types/workflow";
 
 interface CreateTaskModalProps {
   workflowId: string;
   refreshWorkflow: () => void;
-}
-
-type Agent = {
-  _id: string;
-  name: string;
-};
-
-interface Task {
-  _id: string;
-  name: string;
-  status: "pending" | "running" | "completed" | "failed";
 }
 
 interface StepResult {

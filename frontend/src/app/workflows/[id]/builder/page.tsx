@@ -1,6 +1,6 @@
 "use client";
 
-import { validateGraphIntegrity } from "@/utils/graphValidation";
+import { validateGraph } from "@/utils/graphValidation";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -36,6 +36,8 @@ import {
   BackendStep,
   WorkflowPayload as WorkflowResponse,
   WorkflowEdge,
+  WorkflowDocument,
+  McpTool,
 } from "@/types/workflow";
 
 /* ---------------- UTILS ---------------- */
@@ -122,8 +124,8 @@ export default function WorkflowBuilderPage() {
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [workflowName, setWorkflowName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [mcpTools, setMcpTools] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<WorkflowDocument[]>([]);
+  const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
   const [builderMode, setBuilderMode] = useState<"list" | "visual">("list");
   const { addToast } = useToast();
   const [edges, setEdges] = useState<WorkflowEdge[]>([]);
@@ -132,18 +134,18 @@ export default function WorkflowBuilderPage() {
   const [savedEdgesSnapshot, setSavedEdgesSnapshot] = useState<string>("[]");
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [invalidNodeIds, setInvalidNodeIds] = useState<string[]>([]);
-
+ 
   const hasUnsavedChanges = 
     JSON.stringify(steps) !== savedStepsSnapshot || 
     JSON.stringify(edges) !== savedEdgesSnapshot;
-
+ 
   useEffect(() => {
     if (steps.length === 0) {
       setValidationErrors([]);
       setInvalidNodeIds([]);
       return;
     }
-    const validation = validateGraphIntegrity(steps, edges);
+    const validation = validateGraph(steps, edges);
     setValidationErrors(validation.errors);
     setInvalidNodeIds(validation.invalidNodeIds);
   }, [steps, edges]);
@@ -210,48 +212,50 @@ export default function WorkflowBuilderPage() {
                             ? "Tool"
                             : "LLM",
 
-        position: (s as any).position || { x: 0, y: 0 },
-        useMemory: (s as any).useMemory ?? false,
-        memoryTopK: (s as any).memoryTopK ?? 5,
+        position: s.position || { x: 0, y: 0 },
+        useMemory: s.useMemory ?? false,
+        memoryTopK: s.memoryTopK ?? 5,
         prompt: s.prompt ?? "",
         url: s.url ?? "",
-        method: s.method ?? "GET",
+        method: (s.method === "GET" || s.method === "POST" || s.method === "PUT" || s.method === "DELETE")
+          ? s.method
+          : "GET",
         body: s.body ?? "",
         delay: s.type === "delay" ? (s.seconds ?? 0) : 0,
         tool:
           s.type === "file" || s.type === "email" || s.type === "browser"
             ? (s.type as ToolType)
             : undefined,
-        to: (s as any).to ?? "",
-        subject: (s as any).subject ?? "",
-        text: (s as any).text ?? "",
-        html: (s as any).html ?? "",
-        action: (s as any).action ?? "",
-        path: (s as any).path ?? "",
-        content: (s as any).content ?? "",
-        code: (s as any).code ?? "",
-        serverId: (s as any).serverId ?? "",
-        toolName: (s as any).toolName ?? "",
+        to: s.to ?? "",
+        subject: s.subject ?? "",
+        text: s.text ?? "",
+        html: s.html ?? "",
+        action: s.action ?? "",
+        path: s.path ?? "",
+        content: s.content ?? "",
+        code: s.code ?? "",
+        serverId: s.serverId ?? "",
+        toolName: s.toolName ?? "",
         arguments:
-          typeof (s as any).arguments === "string"
-            ? (s as any).arguments
-            : JSON.stringify((s as any).arguments ?? {}, null, 2),
-        timeoutMs: (s as any).timeoutMs ?? 30000,
-        documentId: (s as any).documentId ?? "",
-        query: (s as any).query ?? "",
-        topK: (s as any).topK ?? 4,
-        conditionType: (s as any).conditionType ?? "",
-        operator: (s as any).operator ?? "",
-        value: (s as any).value ?? "",
-        trueTarget: (s as any).trueTarget ?? "",
-        falseTarget: (s as any).falseTarget ?? "",
-        cases: (s as any).cases ?? [],
-        defaultTarget: (s as any).defaultTarget ?? "",
-        owner: (s as any).owner ?? "",
-        repo: (s as any).repo ?? "",
-        issue_number: (s as any).issue_number ?? "",
-        comment: (s as any).comment ?? "",
-        title: (s as any).title ?? "",
+          typeof s.arguments === "string"
+            ? s.arguments
+            : JSON.stringify(s.arguments ?? {}, null, 2),
+        timeoutMs: s.timeoutMs ?? 30000,
+        documentId: s.documentId ?? "",
+        query: s.query ?? "",
+        topK: s.topK ?? 4,
+        conditionType: s.conditionType ?? "",
+        operator: s.operator ?? "",
+        value: s.value ?? "",
+        trueTarget: s.trueTarget ?? "",
+        falseTarget: s.falseTarget ?? "",
+        cases: s.cases ?? [],
+        defaultTarget: s.defaultTarget ?? "",
+        owner: s.owner ?? "",
+        repo: s.repo ?? "",
+        issue_number: s.issue_number ?? "",
+        comment: s.comment ?? "",
+        title: s.title ?? "",
       }));
 
       setSteps(normalizedSteps);
@@ -354,7 +358,7 @@ export default function WorkflowBuilderPage() {
         const cases = outgoing
           .filter((e) => e.caseValue)
           .map((e) => ({
-            value: e.caseValue,
+            value: e.caseValue!,
             target: e.target,
           }));
 
@@ -549,7 +553,7 @@ export default function WorkflowBuilderPage() {
         };
       });
 
-      const validation = validateGraphIntegrity(enrichedSteps, edges);
+      const validation = validateGraph(enrichedSteps, edges);
       if (!isDraft && !validation.isValid) {
         console.error("Save workflow blocked due to validation errors:", validation.errors);
         addToast({
@@ -878,7 +882,7 @@ export default function WorkflowBuilderPage() {
                                 <Select
                                   value={step.tool}
                                   onValueChange={(v) =>
-                                    updateStep(step.id, { tool: v as any })
+                                    updateStep(step.id, { tool: v as ToolType })
                                   }
                                 >
                                   <SelectTrigger className="mt-1.5">
@@ -1087,7 +1091,7 @@ export default function WorkflowBuilderPage() {
                                   value={step.method}
                                   onValueChange={(v) =>
                                     updateStep(step.id, {
-                                      method: v as any,
+                                      method: v as "GET" | "POST" | "PUT" | "DELETE",
                                     })
                                   }
                                 >
