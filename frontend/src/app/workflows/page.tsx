@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect, useState, FormEvent, useCallback, memo, useMemo } from "react";
+import {
+  useEffect,
+  useState,
+  FormEvent,
+  useCallback,
+  memo,
+  useMemo,
+} from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAssistantContext } from "@/context/assistant-context";
 import { Card } from "@/components/ui/card";
 import {
   Dialog,
@@ -41,6 +51,7 @@ import { motion } from "framer-motion";
 import { useAssistantContext } from "@/context/assistant-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
+import { WorkflowPayload as Workflow, WorkflowAgent as Agent } from "@/types/workflow";
 import {
   Bot,
   Check,
@@ -51,8 +62,6 @@ import {
   Plus,
   Pencil,
 } from "lucide-react";
-import Link from "next/link";
-import { FormEvent, memo, useCallback, useEffect, useState } from "react";
 
 // ─── Filter Utilities ──────────────────────────────────────────────
 function useDebounce<T>(value: T, delay = 300): T {
@@ -73,20 +82,7 @@ const SORT_OPTIONS = [
 ];
 // ───────────────────────────────────────────────────────────────────
 
-type Agent = {
-  _id: string;
-  name: string;
-};
 
-interface Workflow {
-  _id: string;
-  name: string;
-  description?: string;
-  status: "idle" | "running" | "failed" | "completed";
-  agentId?: string;
-  createdAt?: string;
-  updatedAt?: string; // Added updatedAt
-}
 
 type Template = {
   id: string;
@@ -143,7 +139,7 @@ const WorkflowCard = memo(
     isCopied: boolean;
     onCopy: (id: string) => void;
     onEdit: (workflow: Workflow) => void;
-    onDelete: (id: string) => void;
+    onDelete: (workflow: Workflow) => void;
     onUpdate: () => void;
   }) => {
     const [isEditing, setIsEditing] = useState(false);
@@ -201,29 +197,31 @@ const WorkflowCard = memo(
               {isEditing ? (
                 <div className="flex items-center gap-2">
                   <input
-  type="text"
-  value={editName}
-  onChange={(e) => setEditName(e.target.value)}
-  onBlur={() => {
-    if (isEditing && !isSaving) {
-      handleSave();
-    }
-  }}
-  onKeyDown={(e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleSave();
-    } else if (e.key === "Escape") {
-      setIsEditing(false);
-      setEditName(workflow.name);
-    }
-  }}
-  autoFocus
-  disabled={isSaving}
-  className="text-lg font-semibold bg-background border border-input rounded px-2 py-1 flex-1"
-/>
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onBlur={() => {
+                      if (isEditing && !isSaving) {
+                        handleSave();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleSave();
+                      } else if (e.key === "Escape") {
+                        setIsEditing(false);
+                        setEditName(workflow.name);
+                      }
+                    }}
+                    autoFocus
+                    disabled={isSaving}
+                    className="text-lg font-semibold bg-background border border-input rounded px-2 py-1 flex-1"
+                  />
                   {isSaving && (
-                    <span className="text-sm text-muted-foreground">Saving...</span>
+                    <span className="text-sm text-muted-foreground">
+                      Saving...
+                    </span>
                   )}
                 </div>
               ) : (
@@ -259,18 +257,6 @@ const WorkflowCard = memo(
               )}
             </div>
 
-          <DropdownMenuContent align="end">
-            <Link href={`/workflows/${workflow._id}/builder`}>
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(workflow);
-                }}
-              >
-                Edit Workflow Details
-              </DropdownMenuItem>
-            </Link>
-            <DropdownMenuItem
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -278,6 +264,11 @@ const WorkflowCard = memo(
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <Link href={`/workflows/${workflow._id}/builder`}>
+                  <DropdownMenuItem>
+                    Configure Steps
+                  </DropdownMenuItem>
+                </Link>
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.preventDefault();
@@ -292,7 +283,7 @@ const WorkflowCard = memo(
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    onDelete(workflow._id);
+                    onDelete(workflow);
                   }}
                 >
                   Delete
@@ -302,7 +293,11 @@ const WorkflowCard = memo(
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2 overflow-hidden opacity-0 max-h-0 transition-all duration-200 group-hover:opacity-100 group-hover:max-h-24">
-            <Button variant="outline" size="sm" onClick={() => onEdit(workflow)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onEdit(workflow)}
+            >
               Edit details
             </Button>
             <Button
@@ -312,7 +307,7 @@ const WorkflowCard = memo(
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                onDelete(workflow._id);
+                onDelete(workflow);
               }}
             >
               Delete
@@ -329,41 +324,41 @@ const WorkflowCard = memo(
             </div>
           </div>
 
-        <div className="mt-3 flex items-center justify-between border-t pt-3">
-          <span className="text-xs text-muted-foreground font-mono truncate max-w-[160px]">
-            {workflow._id.slice(0, 8)}...
-          </span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 text-xs"
-                onClick={(e) => {
-                  e.preventDefault();
-                  onCopy(workflow._id);
-                }}
-              >
-                {isCopied ? (
-              <>
-                <Check className="size-3 text-green-500" />
-                <span className="text-green-500">Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="size-3" />
-                Copy ID
-              </>
-            )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Copy workflow ID</TooltipContent>
-          </Tooltip>
-        </div>
-      </Card>
-    </motion.div>
+          <div className="mt-3 flex items-center justify-between border-t pt-3">
+            <span className="text-xs text-muted-foreground font-mono truncate max-w-[160px]">
+              {workflow._id.slice(0, 8)}...
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onCopy(workflow._id);
+                  }}
+                >
+                  {isCopied ? (
+                    <>
+                      <Check className="size-3 text-green-500" />
+                      <span className="text-green-500">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="size-3" />
+                      Copy ID
+                    </>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Copy workflow ID</TooltipContent>
+            </Tooltip>
+          </div>
+        </Card>
+      </motion.div>
     );
-  }
+  },
 );
 
 WorkflowCard.displayName = "WorkflowCard";
@@ -373,6 +368,9 @@ export default function WorkflowsPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<false | "blank" | "template">(false);
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
+  const [workflowToDelete, setWorkflowToDelete] = useState<Workflow | null>(
+    null,
+  );
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentMap, setAgentMap] = useState<Record<string, string>>({});
   const { addToast } = useToast();
@@ -381,8 +379,27 @@ export default function WorkflowsPage() {
 
   // ─── Filter State ───
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const statusFromUrl = searchParams.get("status");
+
+  const statusFilter =
+    statusFromUrl && STATUS_OPTIONS.includes(statusFromUrl)
+      ? statusFromUrl
+      : "all";
+  const handleStatusChange = (status: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (status === "all") {
+      params.delete("status");
+    } else {
+      params.set("status", status);
+    }
+
+    router.replace(`${pathname}?${params.toString()}`);
+  };
   const debouncedQuery = useDebounce(query, 300);
 
   const fetchAgents = useCallback(async () => {
@@ -410,12 +427,12 @@ export default function WorkflowsPage() {
         },
       });
       const data = await res.json();
-      
+
       // POINT 3 FIX: Safely extract array regardless of API wrapper
-      const workflowsArray = Array.isArray(data) 
-        ? data 
-        : (data.workflows || data.data || []);
-        
+      const workflowsArray = Array.isArray(data)
+        ? data
+        : data.workflows || data.data || [];
+
       setWorkflows(workflowsArray);
     } catch (err) {
       console.error("Failed to fetch workflows:", err);
@@ -424,26 +441,9 @@ export default function WorkflowsPage() {
     }
   }, []);
 
-  const handleDeleteWorkflow = useCallback(async (id: string) => {
-    const confirmed = confirm("Delete this workflow? This cannot be undone.");
-    if (!confirmed) return;
-
-    try {
-      const res = await fetch(apiUrl(`/workflows/${id}`), {
-        method: "DELETE",
-        headers: {
-          Authorization: "Bearer " + (localStorage.getItem("token") ?? ""),
-        },
-      });
-
-      if (!res.ok) throw new Error("Failed");
-
-      addToast({ type: "success", title: "Workflow deleted" });
-      fetchWorkflows();
-    } catch (err) {
-      console.error("Delete failed:", err);
-    }
-  }, [addToast, fetchWorkflows]);
+  const handleDeleteClick = useCallback((workflow: Workflow) => {
+    setWorkflowToDelete(workflow);
+  }, []);
 
   useEffect(() => {
     fetchWorkflows();
@@ -458,7 +458,7 @@ export default function WorkflowsPage() {
       if (!agentId) return "No agent";
       return agentMap[agentId] ?? "Unknown agent";
     },
-    [agentMap]
+    [agentMap],
   );
 
   useEffect(() => {
@@ -492,7 +492,7 @@ export default function WorkflowsPage() {
         });
       }
     },
-    [addToast]
+    [addToast],
   );
 
   const handleEditWorkflow = useCallback((workflow: Workflow) => {
@@ -506,7 +506,9 @@ export default function WorkflowsPage() {
     if (debouncedQuery.trim()) {
       const q = debouncedQuery.toLowerCase();
       result = result.filter(
-        (w) => w.name?.toLowerCase().includes(q) || w.description?.toLowerCase().includes(q)
+        (w) =>
+          w.name?.toLowerCase().includes(q) ||
+          w.description?.toLowerCase().includes(q),
       );
     }
 
@@ -518,30 +520,49 @@ export default function WorkflowsPage() {
       // 1. Handle "Recently Updated" sorting
       if (sortBy === "updated") {
         // Fallback: If updatedAt is missing, use createdAt. If both missing, use MongoID.
-        const updatedA = a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : parseInt(a._id.substring(0, 8), 16));
-        const updatedB = b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : parseInt(b._id.substring(0, 8), 16));
+        const updatedA = a.updatedAt
+          ? new Date(a.updatedAt).getTime()
+          : a.createdAt
+            ? new Date(a.createdAt).getTime()
+            : parseInt(a._id.substring(0, 8), 16);
+        const updatedB = b.updatedAt
+          ? new Date(b.updatedAt).getTime()
+          : b.createdAt
+            ? new Date(b.createdAt).getTime()
+            : parseInt(b._id.substring(0, 8), 16);
         return updatedB - updatedA; // Sort descending (newest updates first)
       }
 
       // 2. Handle standard Created dates (newest/oldest)
-      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : parseInt(a._id.substring(0, 8), 16);
-      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : parseInt(b._id.substring(0, 8), 16);
+      const dateA = a.createdAt
+        ? new Date(a.createdAt).getTime()
+        : parseInt(a._id.substring(0, 8), 16);
+      const dateB = b.createdAt
+        ? new Date(b.createdAt).getTime()
+        : parseInt(b._id.substring(0, 8), 16);
 
       if (sortBy === "newest") return dateB - dateA;
       if (sortBy === "oldest") return dateA - dateB;
-      if (sortBy === "alphabetical") return (a.name || "").localeCompare(b.name || "");
+      if (sortBy === "alphabetical")
+        return (a.name || "").localeCompare(b.name || "");
       return 0;
     });
 
     return result;
   }, [workflows, debouncedQuery, statusFilter, sortBy]);
 
-  const hasActiveFilters = query || statusFilter !== "all" || sortBy !== "newest";
+  const hasActiveFilters =
+    query || statusFilter !== "all" || sortBy !== "newest";
 
   function clearFilters() {
     setQuery("");
-    setStatusFilter("all");
     setSortBy("newest");
+
+    const params = new URLSearchParams(searchParams.toString());
+
+    params.delete("status");
+
+    router.replace(`${pathname}?${params.toString()}`);
   }
 
   return (
@@ -580,32 +601,74 @@ export default function WorkflowsPage() {
             </div>
 
             {loading ? (
-              <p className="opacity-70">Loading workflows...</p>
-            ) : workflows.length === 0 ? (
-              // Hard Empty State (No workflows exist in database at all)
-              <div className="py-12 max-w-2xl mx-auto">
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <GitFork />
-                    </EmptyMedia>
-                    <EmptyTitle>No workflows yet</EmptyTitle>
-                    <EmptyDescription>
-                      Create your first automated workflow or build from a
-                      template configuration to begin setting up agent jobs.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent>
-                    <div className="flex gap-4">
-                      <Button onClick={() => setOpen("blank")}>
-                        Create Blank Workflow
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setOpen("template")}
-                      >
-                        Choose Template
-                      </Button>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Card key={i} className="p-6">
+                    <div className="space-y-4">
+                      <Skeleton className="h-6 w-3/4" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-5/6" />
+                      <Skeleton className="h-4 w-1/2" />
+                      <Skeleton className="h-8 w-24" />
+                    </div>
+                 </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {workflows.map((workflow) => (
+                  <Card key={workflow._id} className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <Link
+                          href={`/workflows/${workflow._id}`}
+                          className="text-lg font-semibold hover:text-primary"
+                        >
+                          {workflow.name}
+                        </Link>
+
+                        {workflow.description && (
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {workflow.description}
+                          </p>
+                        )}
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+
+                        <DropdownMenuContent align="end">
+                          <Link href={`/workflows/${workflow._id}/builder`}>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setEditingWorkflow(workflow);
+                              }}
+                            >
+                              Edit Workflow Details
+                            </DropdownMenuItem>
+                          </Link>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDeleteWorkflow(workflow._id);
+                            }}
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </EmptyContent>
                 </Empty>
@@ -613,7 +676,6 @@ export default function WorkflowsPage() {
             ) : (
               // Workflows exist! Show the new Toolbar and Grid
               <div className="space-y-6">
-                
                 {/* ─── Control Toolbar ─── */}
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                   <div className="relative flex-1">
@@ -625,7 +687,11 @@ export default function WorkflowsPage() {
                       stroke="currentColor"
                       strokeWidth={2}
                     >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
+                      />
                     </svg>
                     <Input
                       type="text"
@@ -638,7 +704,7 @@ export default function WorkflowsPage() {
 
                   <select
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    onChange={(e) => handleStatusChange(e.target.value)}
                     className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 capitalize"
                   >
                     {STATUS_OPTIONS.map((s) => (
@@ -663,10 +729,14 @@ export default function WorkflowsPage() {
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>
-                    Showing {filteredWorkflows.length} of {workflows.length} workflows
+                    Showing {filteredWorkflows.length} of {workflows.length}{" "}
+                    workflows
                   </span>
                   {hasActiveFilters && (
-                    <button onClick={clearFilters} className="text-primary hover:underline">
+                    <button
+                      onClick={clearFilters}
+                      className="text-primary hover:underline"
+                    >
                       Clear filters
                     </button>
                   )}
@@ -679,22 +749,28 @@ export default function WorkflowsPage() {
                     <p className="mt-1 text-xs text-muted-foreground">
                       Try adjusting your search or filters.
                     </p>
-                    <Button variant="ghost" size="sm" className="mt-4" onClick={clearFilters}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-4"
+                      onClick={clearFilters}
+                    >
                       Clear filters
                     </Button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                     {filteredWorkflows.map((workflow) => (
-                      <WorkflowCard
-                        key={workflow._id}
-                        workflow={workflow}
-                        agentName={getAgentName(workflow.agentId)}
-                        isCopied={copiedId === workflow._id}
-                        onCopy={copyId}
-                        onEdit={handleEditWorkflow}
-                        onDelete={handleDeleteWorkflow}
-                      />
+                     <WorkflowCard
+  key={workflow._id}
+  workflow={workflow}
+  agentName={getAgentName(workflow.agentId)}
+  isCopied={copiedId === workflow._id}
+  onCopy={copyId}
+  onEdit={handleEditWorkflow}
+  onDelete={handleDeleteClick}
+  onUpdate={fetchWorkflows}
+/>
                     ))}
                   </div>
                 )}
@@ -711,6 +787,11 @@ export default function WorkflowsPage() {
         <EditWorkflowModal
           workflow={editingWorkflow}
           close={() => setEditingWorkflow(null)}
+          refresh={fetchWorkflows}
+        />
+        <DeleteWorkflowModal
+          workflow={workflowToDelete}
+          close={() => setWorkflowToDelete(null)}
           refresh={fetchWorkflows}
         />
       </div>
@@ -889,6 +970,78 @@ function EditWorkflowModal({
           </Button>
           <Button onClick={save} disabled={loading}>
             Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteWorkflowModal({
+  workflow,
+  close,
+  refresh,
+}: {
+  workflow: Workflow | null;
+  close: () => void;
+  refresh: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const { addToast } = useToast();
+
+  async function confirmDelete() {
+    if (!workflow) return;
+    setLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/workflows/${workflow._id}`), {
+        method: "DELETE",
+        headers: {
+          Authorization: "Bearer " + (localStorage.getItem("token") ?? ""),
+        },
+      });
+
+      if (!res.ok) throw new Error("Delete failed");
+
+      addToast({ type: "success", title: "Workflow deleted" });
+      refresh();
+      close();
+    } catch (err) {
+      console.error("Delete failed:", err);
+      addToast({ type: "error", title: "Failed to delete workflow" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={!!workflow}
+      onOpenChange={(open) => {
+        if (!open && !loading) close();
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-md"
+        onEscapeKeyDown={(e) => loading && e.preventDefault()}
+        onPointerDownOutside={(e) => loading && e.preventDefault()}
+      >
+        <DialogHeader>
+          <DialogTitle>Delete Workflow</DialogTitle>
+          <DialogDescription className="text-foreground mt-4">
+            Are you sure you want to delete workflow{" "}
+            <strong>"{workflow?.name}"</strong>? This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={close} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={confirmDelete}
+            disabled={loading}
+          >
+            {loading ? "Deleting..." : "Delete"}
           </Button>
         </DialogFooter>
       </DialogContent>
