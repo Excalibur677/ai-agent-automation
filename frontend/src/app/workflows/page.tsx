@@ -6,6 +6,8 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAssistantContext } from "@/context/assistant-context";
 import { Card } from "@/components/ui/card";
 import {
   Dialog,
@@ -550,32 +552,74 @@ export default function WorkflowsPage() {
             </div>
 
             {loading ? (
-              <p className="opacity-70">Loading workflows...</p>
-            ) : workflows.length === 0 ? (
-              // Hard Empty State (No workflows exist in database at all)
-              <div className="py-12 max-w-2xl mx-auto">
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <GitFork />
-                    </EmptyMedia>
-                    <EmptyTitle>No workflows yet</EmptyTitle>
-                    <EmptyDescription>
-                      Create your first automated workflow or build from a
-                      template configuration to begin setting up agent jobs.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent>
-                    <div className="flex gap-4">
-                      <Button onClick={() => setOpen("blank")}>
-                        Create Blank Workflow
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setOpen("template")}
-                      >
-                        Choose Template
-                      </Button>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Card key={i} className="p-6">
+                    <div className="space-y-4">
+                      <Skeleton className="h-6 w-3/4" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-5/6" />
+                      <Skeleton className="h-4 w-1/2" />
+                      <Skeleton className="h-8 w-24" />
+                    </div>
+                 </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {workflows.map((workflow) => (
+                  <Card key={workflow._id} className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <Link
+                          href={`/workflows/${workflow._id}`}
+                          className="text-lg font-semibold hover:text-primary"
+                        >
+                          {workflow.name}
+                        </Link>
+
+                        {workflow.description && (
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {workflow.description}
+                          </p>
+                        )}
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+
+                        <DropdownMenuContent align="end">
+                          <Link href={`/workflows/${workflow._id}/builder`}>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setEditingWorkflow(workflow);
+                              }}
+                            >
+                              Edit Workflow Details
+                            </DropdownMenuItem>
+                          </Link>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDeleteWorkflow(workflow._id);
+                            }}
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </EmptyContent>
                 </Empty>
