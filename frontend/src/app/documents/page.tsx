@@ -16,7 +16,6 @@ import {
   EmptyDescription,
   EmptyContent,
 } from "@/components/ui/empty";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAssistantContext } from "@/context/assistant-context";
 import {
@@ -44,6 +43,8 @@ type Document = {
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [documentsError, setDocumentsError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
@@ -55,6 +56,9 @@ export default function DocumentsPage() {
 
   async function fetchDocuments() {
     try {
+      setDocumentsLoading(true);
+      setDocumentsError("");
+
       const res = await fetch(apiUrl("/documents"), {
         headers: {
           Authorization: "Bearer " + localStorage.getItem("token"),
@@ -62,11 +66,16 @@ export default function DocumentsPage() {
       });
 
       const data = await res.json();
-      if (data.ok) {
-        setDocuments(data.documents || []);
+
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Could not load documents.");
       }
-    } catch (err) {
-      console.error(err);
+
+      setDocuments(data.documents || []);
+    } catch {
+      setDocumentsError("Could not load documents. Make sure the backend server is running.");
+    } finally {
+      setDocumentsLoading(false);
     }
   }
 
@@ -161,6 +170,10 @@ export default function DocumentsPage() {
     router.push(`/documents/chat?ids=${selectedDocumentIds.join(",")}`);
   }
 
+  function openDocument(id: string) {
+    router.push(`/documents/${id}`);
+  }
+
   function getFileIcon(type: string) {
     if (type === "pdf") return <FileText className="size-5 text-red-500" />;
     if (type === "md") return <FileCode className="size-5 text-blue-500" />;
@@ -233,8 +246,30 @@ export default function DocumentsPage() {
               </div>
             </div>
 
+            {documentsLoading && (
+              <div className="py-12 text-sm text-muted-foreground">
+                Loading documents...
+              </div>
+            )}
+
+            {documentsError && !documentsLoading && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+                <p className="text-sm font-medium text-destructive">
+                  {documentsError}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchDocuments}
+                  className="mt-3"
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+
             {/* Empty state conditional */}
-            {filteredDocs.length === 0 && (
+            {!documentsLoading && !documentsError && filteredDocs.length === 0 && (
               <div className="py-4 w-full">
                 {documents.length > 0 ? (
                   <Empty>
@@ -276,7 +311,7 @@ export default function DocumentsPage() {
             )}
 
             {/* Document Grid */}
-            {filteredDocs.length > 0 && (
+            {!documentsLoading && !documentsError && filteredDocs.length > 0 && (
               <div className="space-y-5">
                 {selectedDocumentIds.length > 0 && (
                   <div className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/10 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -316,89 +351,98 @@ export default function DocumentsPage() {
                     const isSelected = selectedDocumentIds.includes(doc._id);
 
                     return (
-                      <Link key={doc._id} href={`/documents/${doc._id}`}>
-                        <Card
-                          className={`p-5 flex flex-col justify-between cursor-pointer transition-all hover:border-primary hover:shadow-lg hover:-translate-y-0.5 ${
-                            isSelected
-                              ? "border-primary bg-primary/10 shadow-md ring-1 ring-primary/30"
-                              : ""
-                          }`}
-                        >
-                          {/* Top */}
-                          <div className="flex items-start gap-3">
-                            <div className="p-2 rounded-md bg-muted">
-                              {getFileIcon(doc.fileType)}
-                            </div>
+                      <Card
+                        key={doc._id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open ${doc.title || "Untitled"}`}
+                        onClick={() => openDocument(doc._id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openDocument(doc._id);
+                          }
+                        }}
+                        className={`p-5 flex flex-col justify-between cursor-pointer transition-all hover:border-primary hover:shadow-lg hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          isSelected
+                            ? "border-primary bg-primary/10 shadow-md ring-1 ring-primary/30"
+                            : ""
+                        }`}
+                      >
+                        {/* Top */}
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-md bg-muted">
+                            {getFileIcon(doc.fileType)}
+                          </div>
 
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-start gap-3">
-                                <p className="min-w-0 flex-1 truncate font-semibold">
-                                  {doc.title || "Untitled"}
-                                </p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start gap-3">
+                              <p className="min-w-0 flex-1 truncate font-semibold">
+                                {doc.title || "Untitled"}
+                              </p>
 
-                                <div
-                                  className="flex items-center gap-2"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                  }}
-                                >
-                                  {isSelected && (
-                                    <Badge variant="secondary" className="hidden text-xs sm:inline-flex">
-                                      Selected
-                                    </Badge>
-                                  )}
-
-                                  <Checkbox
-                                    checked={isSelected}
-                                    aria-label={`Select ${doc.title || "Untitled"}`}
-                                    onCheckedChange={() => toggleDocumentSelection(doc._id)}
-                                    onKeyDown={(e) => {
-                                      e.stopPropagation();
-                                    }}
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-2 mt-2">
-                                <Badge variant="secondary" className="text-xs">
-                                  {doc.fileType}
-                                </Badge>
-
-                                <Badge variant="outline" className="text-xs font-mono">
-                                  {doc.chunkCount} chunks
-                                </Badge>
-
-                                {doc.size && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {formatSize(doc.size)}
+                              <div
+                                className="flex items-center gap-2"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                              >
+                                {isSelected && (
+                                  <Badge variant="secondary" className="hidden text-xs sm:inline-flex">
+                                    Selected
                                   </Badge>
                                 )}
+
+                                <Checkbox
+                                  checked={isSelected}
+                                  aria-label={`Select ${doc.title || "Untitled"}`}
+                                  onCheckedChange={() => toggleDocumentSelection(doc._id)}
+                                  onKeyDown={(e) => {
+                                    e.stopPropagation();
+                                  }}
+                                />
                               </div>
                             </div>
-                          </div>
 
-                          {/* Bottom */}
-                          <div className="flex justify-between items-center mt-6">
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(doc.createdAt).toLocaleDateString()}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              <Badge variant="secondary" className="text-xs">
+                                {doc.fileType}
+                              </Badge>
 
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-destructive hover:bg-destructive/10"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                deleteDoc(doc._id);
-                              }}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
+                              <Badge variant="outline" className="text-xs font-mono">
+                                {doc.chunkCount} chunks
+                              </Badge>
+
+                              {doc.size && (
+                                <Badge variant="outline" className="text-xs">
+                                  {formatSize(doc.size)}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
-                        </Card>
-                      </Link>
+                        </div>
+
+                        {/* Bottom */}
+                        <div className="flex justify-between items-center mt-6">
+                          <span className="text-xs text-muted-foreground">
+                            {doc.createdAt.slice(0, 10)}
+                          </span>
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:bg-destructive/10"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              deleteDoc(doc._id);
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </Card>
                     );
                   })}
                 </div>

@@ -156,9 +156,8 @@ function MultiDocumentChatContent() {
         setMissingDocumentIds(
           selectedDocumentIds.filter((id) => !byId.has(id))
         );
-      } catch (err) {
-        console.error("Failed to load selected documents", err);
-        setMetadataError("Could not load selected document details.");
+      } catch {
+        setMetadataError("Could not load selected document details. Make sure the backend server is running.");
       } finally {
         setMetadataLoading(false);
       }
@@ -210,7 +209,6 @@ function MultiDocumentChatContent() {
         }
       ]);
     } catch (err) {
-      console.error("Multi-document chat error", err);
       setChatError(
         err instanceof Error
           ? err.message
