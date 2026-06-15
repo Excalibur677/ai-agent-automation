@@ -79,13 +79,33 @@ function formatSize(bytes?: number) {
   if (!bytes) return null;
 
   const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 function formatScore(score?: number) {
   if (typeof score !== "number") return null;
   return score.toFixed(2);
+}
+
+function formatSourceMeta(document: DocumentMeta) {
+  const status = document.status === "ready" ? "Ready" : "Processing";
+  const type = document.fileType?.toUpperCase();
+  const size = formatSize(document.size);
+
+  const details = document.status === "ready"
+    ? [
+        status,
+        typeof document.chunkCount === "number" ? `${document.chunkCount} chunks` : null,
+        size
+      ]
+    : [
+        status,
+        type,
+        size
+      ];
+
+  return details.filter(Boolean).join(" · ");
 }
 
 function MultiDocumentChatContent() {
@@ -315,45 +335,41 @@ function MultiDocumentChatContent() {
 
             <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
               <aside className="min-h-0">
-                <Card className="flex h-full flex-col border-border bg-muted/20">
-                  <div className="border-b border-border p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h2 className="text-sm font-semibold">Sources</h2>
-                        <p className="text-xs text-muted-foreground">
-                          Selected document set
-                        </p>
-                      </div>
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {documents.length}/{selectedDocumentIds.length}
-                      </Badge>
+                <Card className="flex h-full flex-col overflow-hidden border-border/70 bg-muted/10 shadow-sm">
+                  <div className="border-b border-border/70 px-5 py-5">
+                    <div className="space-y-1">
+                      <h2 className="text-base font-semibold tracking-tight">Sources</h2>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedDocumentIds.length} documents selected
+                      </p>
                     </div>
                   </div>
 
                   <ScrollArea className="flex-1">
-                    <div className="space-y-3 p-4">
+                    <div className="space-y-3.5 p-5">
                       {metadataLoading && (
-                        <div className="flex items-center gap-2 rounded-md border border-border bg-background/70 p-3 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-background/60 px-3 py-2.5 text-sm text-muted-foreground">
                           <Loader2 className="size-4 animate-spin" />
                           Loading sources...
                         </div>
                       )}
 
                       {metadataError && (
-                        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                        <div className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
                           {metadataError}
                         </div>
                       )}
 
                       {missingDocumentIds.length > 0 && (
-                        <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-300">
+                        <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/10 px-3 py-2.5 text-sm text-yellow-200">
                           {missingDocumentIds.length} selected document(s) could not be loaded or are not accessible.
                         </div>
                       )}
 
                       {nonReadyDocuments.length > 0 && (
-                        <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-300">
-                          Some selected documents are not ready yet. The backend may reject questions until processing finishes.
+                        <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                          <span className="text-primary">⚡</span>{" "}
+                          Preparing {nonReadyDocuments.length} source{nonReadyDocuments.length === 1 ? "" : "s"}. Answers may improve once processing finishes.
                         </div>
                       )}
 
@@ -361,39 +377,22 @@ function MultiDocumentChatContent() {
                         <Link
                           key={document._id}
                           href={`/documents/${document._id}`}
-                          className="block rounded-lg border border-border bg-background/80 p-3 transition-colors hover:border-primary/60 hover:bg-primary/10"
+                          className="block rounded-xl border border-border/70 bg-background/70 p-4 shadow-sm transition-colors hover:border-primary/35 hover:bg-background"
                         >
-                          <div className="flex items-start gap-3">
-                            <div className="rounded-md bg-muted p-2">
-                              <FileText className="size-4 text-primary" />
+                          <div className="flex items-start gap-3.5">
+                            <div className="mt-0.5 rounded-md bg-muted/80 p-1.5">
+                              <FileText className="size-3.5 text-muted-foreground" />
                             </div>
-                            <div className="min-w-0 flex-1 space-y-2">
+                            <div className="min-w-0 flex-1 space-y-1.5">
                               <div className="flex items-start justify-between gap-2">
-                                <p className="truncate text-sm font-medium">
+                                <p className="min-w-0 truncate text-[15px] font-medium leading-snug">
                                   {document.title || "Untitled"}
                                 </p>
-                                <ExternalLink className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                                <ExternalLink className="mt-1 size-3 shrink-0 text-muted-foreground/70" />
                               </div>
-                              <div className="flex flex-wrap gap-2">
-                                <Badge variant={document.status === "ready" ? "secondary" : "outline"} className="text-[11px]">
-                                  {document.status || "ready"}
-                                </Badge>
-                                {document.fileType && (
-                                  <Badge variant="outline" className="text-[11px]">
-                                    {document.fileType}
-                                  </Badge>
-                                )}
-                                {typeof document.chunkCount === "number" && (
-                                  <Badge variant="outline" className="text-[11px] font-mono">
-                                    {document.chunkCount} chunks
-                                  </Badge>
-                                )}
-                                {document.size && (
-                                  <Badge variant="outline" className="text-[11px]">
-                                    {formatSize(document.size)}
-                                  </Badge>
-                                )}
-                              </div>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {formatSourceMeta(document)}
+                              </p>
                             </div>
                           </div>
                         </Link>
