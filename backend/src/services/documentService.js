@@ -69,15 +69,30 @@ async function processDocument(agent, document, text) {
 
 async function queryDocument(agent, userId, documentId, query, topK = 3) {
 
+    return queryDocuments(agent, userId, [documentId], query, topK);
+}
+
+async function queryDocuments(agent, userId, documentIds, query, topK = 3) {
+
+    const uniqueDocumentIds = [...new Map(
+        (Array.isArray(documentIds) ? documentIds : [])
+            .filter(Boolean)
+            .map(id => [id.toString(), id])
+    ).values()];
+
+    if (!uniqueDocumentIds.length) {
+        return [];
+    }
+
     // Generate embedding for the query
     const queryEmbedding = await runEmbedding(query, agent);
 
-    // Fetch only the chunks from the specific document
+    // Fetch only the chunks from the selected documents
     const chunks = await DocumentChunk.find({
         userId,
-        documentId
+        documentId: { $in: uniqueDocumentIds }
     })
-        .select("content embedding") // load only required fields
+        .select("documentId chunkIndex content embedding") // load only required fields
         .lean();
 
     if (!chunks.length) {
@@ -99,5 +114,6 @@ async function queryDocument(agent, userId, documentId, query, topK = 3) {
 
 module.exports = {
     processDocument,
-    queryDocument
+    queryDocument,
+    queryDocuments
 };
