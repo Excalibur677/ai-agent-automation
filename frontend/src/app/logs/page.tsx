@@ -6,18 +6,34 @@ import { Card } from "@/components/ui/card";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
-import { Download, Pause, Play, RefreshCw, Terminal } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
+import { Pause, Play, RefreshCw, Terminal, X } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
 import { apiUrl } from "@/lib/api";
 
-type LogLevel = "info" | "success" | "warn" | "error";
+type LogLevel = "debug" | "info" | "success" | "warn" | "error";
 
 type Log = {
   _id: string;
   message: string;
   level: LogLevel;
+  workflowId?: string;
+  taskId?: string;
   createdAt: string;
 };
 
@@ -29,6 +45,8 @@ function getLevelColor(level: LogLevel) {
       return "text-destructive";
     case "warn":
       return "text-warning";
+    case "debug":
+      return "text-zinc-500";
     default:
       return "text-foreground";
   }
@@ -36,25 +54,30 @@ function getLevelColor(level: LogLevel) {
 
 function getLogColor(log: Log) {
   const msg = log.message.toLowerCase();
-
   if (msg.includes("failed")) return "text-destructive";
-  if (msg.includes("completed") && msg.includes("success"))
-    return "text-success";
+  if (msg.includes("completed") && msg.includes("success")) return "text-success";
   if (msg.includes("executing")) return "text-warning";
   if (msg.includes("claimed")) return "text-cyan-400";
-
   return getLevelColor(log.level);
 }
 
 function getLogBadge(log: Log) {
   const msg = log.message.toLowerCase();
-
   if (msg.includes("failed")) return "FAILED";
   if (msg.includes("completed") && msg.includes("success")) return "SUCCESS";
   if (msg.includes("executing")) return "EXEC";
   if (msg.includes("claimed")) return "CLAIMED";
-
   return log.level.toUpperCase();
+}
+
+function LogRowSkeleton() {
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <Skeleton className="h-5 w-20" />
+      <Skeleton className="h-6 w-16" />
+      <Skeleton className="h-4 flex-1" />
+    </div>
+  );
 }
 
 export default function LogsPage() {
@@ -65,15 +88,41 @@ export default function LogsPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const { setContext, clearContext } = useAssistantContext();
 
+  const [search, setSearch] = useState("");
+  const [level, setLevel] = useState("all");
+  const [workflowId, setWorkflowId] = useState("");
+  const [taskId, setTaskId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  function buildQuery() {
+    const params = new URLSearchParams();
+    params.set("limit", "200");
+    if (search) params.set("search", search);
+    if (level && level !== "all") params.set("level", level);
+    if (workflowId) params.set("workflowId", workflowId);
+    if (taskId) params.set("taskId", taskId);
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    return params.toString();
+  }
+
+  function resetFilters() {
+    setSearch("");
+    setLevel("all");
+    setWorkflowId("");
+    setTaskId("");
+    setStartDate("");
+    setEndDate("");
+  }
+
   async function fetchLogs(showLoader = false) {
     try {
       if (showLoader) setLoading(true);
       setError("");
 
-      const res = await fetch(apiUrl("/logs?limit=200"), {
-        headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
-        },
+      const res = await fetch(apiUrl(`/logs?${buildQuery()}`), {
+        headers: { Authorization: "Bearer " + localStorage.getItem("token") },
         cache: "no-store",
       });
 
@@ -83,7 +132,7 @@ export default function LogsPage() {
         throw new Error(data.error || "Could not load logs");
       }
 
-      if (data.ok && Array.isArray(data.logs)) {
+      if (Array.isArray(data.logs)) {
         const sorted = [...data.logs].sort(
           (a, b) =>
             new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
@@ -99,13 +148,9 @@ export default function LogsPage() {
 
   useEffect(() => {
     fetchLogs(true);
-
-    const interval = setInterval(() => {
-      fetchLogs(false);
-    }, 10000);
-
+    const interval = setInterval(() => fetchLogs(false), 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [search, level, workflowId, taskId, startDate, endDate]);
 
   useEffect(() => {
     if (loading) return;
@@ -116,28 +161,27 @@ export default function LogsPage() {
       page: "logs",
       logScope: "system",
       status: `${recentErrors.length} recent error(s)`,
-
       recentActivity: recentErrors.map((l) => ({
         type: "workflow" as const,
         name: l.message.slice(0, 80),
         status: "error",
       })),
-
       logsSummary: recentErrors.map((l) => ({
-        level: l.level,
+        level: "error",
         message: l.message,
         time: l.createdAt,
       })),
     });
 
     return () => clearContext();
-  }, [loading, logs.length]);
+  }, [loading, logs, setContext, clearContext]);
 
   useEffect(() => {
-    if (autoScroll) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs, autoScroll]);
+
+  const hasActiveFilters =
+    search || (level && level !== "all") || workflowId || taskId || startDate || endDate;
 
   return (
     <AuthGuard>
@@ -177,6 +221,64 @@ export default function LogsPage() {
               </div>
             </div>
 
+            <div className="mb-4 flex flex-wrap gap-3 items-end">
+              <Input
+                placeholder="Search logs..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-52"
+              />
+
+              <Select value={level} onValueChange={setLevel}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Log Level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Levels</SelectItem>
+                  <SelectItem value="debug">Debug</SelectItem>
+                  <SelectItem value="info">Info</SelectItem>
+                  <SelectItem value="success">Success</SelectItem>
+                  <SelectItem value="warn">Warn</SelectItem>
+                  <SelectItem value="error">Error</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Input
+                placeholder="Workflow ID"
+                value={workflowId}
+                onChange={(e) => setWorkflowId(e.target.value)}
+                className="w-44"
+              />
+
+              <Input
+                placeholder="Task ID"
+                value={taskId}
+                onChange={(e) => setTaskId(e.target.value)}
+                className="w-44"
+              />
+
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-40"
+              />
+
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-40"
+              />
+
+              {hasActiveFilters && (
+                <Button variant="ghost" onClick={resetFilters} className="gap-1">
+                  <X className="size-4" />
+                  Reset
+                </Button>
+              )}
+            </div>
+
             <Card className="overflow-hidden bg-black p-0 border-zinc-800">
               <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/40 px-4 py-2">
                 <div className="flex items-center gap-2">
@@ -190,12 +292,16 @@ export default function LogsPage() {
               </div>
 
               <div
-                className="overflow-y-auto bg-black p-6 flex flex-col"
+                className="overflow-y-auto bg-black p-6"
                 style={{ height: "calc(100vh - 300px)" }}
               >
-                <div className="space-y-1 font-mono text-sm flex-1 flex flex-col justify-center">
+                <div className="space-y-1 font-mono text-sm">
                   {loading && (
-                    <p className="text-zinc-500 text-center">Loading logs…</p>
+                    <>
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <LogRowSkeleton key={i} />
+                      ))}
+                    </>
                   )}
 
                   {!loading && error && (
@@ -204,11 +310,14 @@ export default function LogsPage() {
                         <EmptyMedia className="bg-zinc-900 text-zinc-400">
                           <Terminal className="size-5" />
                         </EmptyMedia>
-                        <EmptyTitle className="text-zinc-200">Unable to load logs</EmptyTitle>
+                        <EmptyTitle className="text-zinc-200">
+                          Unable to load logs
+                        </EmptyTitle>
                         <EmptyDescription className="text-zinc-500">
                           {error}
                         </EmptyDescription>
                       </EmptyHeader>
+
                       <Button
                         variant="outline"
                         size="sm"
@@ -227,29 +336,33 @@ export default function LogsPage() {
                         <EmptyMedia className="bg-zinc-900 text-zinc-400">
                           <Terminal className="size-5" />
                         </EmptyMedia>
-                        <EmptyTitle className="text-zinc-200">Terminal buffer clear</EmptyTitle>
+                        <EmptyTitle className="text-zinc-200">
+                          No logs found
+                        </EmptyTitle>
                         <EmptyDescription className="text-zinc-500">
-                          No active job cycles detected. Production console streams will populate execution events here.
+                          {hasActiveFilters
+                            ? "No logs match your current filters."
+                            : "No active job cycles detected."}
                         </EmptyDescription>
                       </EmptyHeader>
                     </Empty>
                   )}
 
-                  {!error && logs.length > 0 && (
+                  {!loading && !error && logs.length > 0 && (
                     <div className="w-full h-full align-top space-y-1">
                       {logs.map((log) => (
                         <div key={log._id} className={getLogColor(log)}>
                           <span className="text-zinc-600">
                             [{new Date(log.createdAt).toLocaleTimeString()}]
                           </span>
-
                           <Badge
                             variant="outline"
-                            className={`mx-2 border-current text-[10px] h-4 px-1.5 ${getLogColor(log)}`}
+                            className={`mx-2 border-current text-[10px] h-4 px-1.5 ${getLogColor(
+                              log
+                            )}`}
                           >
                             {getLogBadge(log)}
                           </Badge>
-
                           {log.message}
                         </div>
                       ))}

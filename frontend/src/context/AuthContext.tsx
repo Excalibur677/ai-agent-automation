@@ -1,7 +1,8 @@
-"use client";
+'use client';
 
-import { createContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import type { ReactNode } from 'react';
+import { createContext, useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 type AuthUser = {
   id?: string;
@@ -23,7 +24,7 @@ export const AuthContext = createContext<AuthContextType | null>(null);
 
 function decodeJwt(jwt: string) {
   try {
-    return JSON.parse(atob(jwt.split(".")[1]));
+    return JSON.parse(atob(jwt.split('.')[1]));
   } catch {
     return null;
   }
@@ -46,6 +47,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   const hydrateUser = useCallback((jwt: string) => {
     const payload = decodeJwt(jwt);
+
     if (!payload) {
       setUser(null);
       return;
@@ -61,8 +63,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem("token");
-    router.replace("/login");
+    localStorage.removeItem('token');
+    router.replace('/login');
   }, [router]);
 
   useEffect(() => {
@@ -71,10 +73,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     queueMicrotask(() => {
       if (!active) return;
 
-      const saved = localStorage.getItem("token");
+      const saved = localStorage.getItem('token');
 
       if (saved && isTokenExpired(saved)) {
-        localStorage.removeItem("token");
+        localStorage.removeItem('token');
         setLoading(false);
         return;
       }
@@ -119,11 +121,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     setToken(jwt);
-    localStorage.setItem("token", jwt);
+    localStorage.setItem('token', jwt);
     hydrateUser(jwt);
-    router.replace("/");
+    router.replace('/');
   }
-
 
   return (
     <AuthContext.Provider value={{ token, user, login, logout, loading }}>

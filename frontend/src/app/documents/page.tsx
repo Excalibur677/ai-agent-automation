@@ -28,7 +28,7 @@ import {
   Search,
   SearchX,
   MessageSquare,
-  X
+  X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
@@ -107,6 +107,7 @@ export default function DocumentsPage() {
       if (showLoader) {
         setDocumentsLoading(true);
       }
+
       setDocumentsError("");
 
       const res = await fetch(apiUrl("/documents"), {
@@ -123,7 +124,9 @@ export default function DocumentsPage() {
 
       setDocuments(data.documents || []);
     } catch {
-      setDocumentsError("Could not load documents. Make sure the backend server is running.");
+      setDocumentsError(
+        "Could not load documents. Make sure the backend server is running."
+      );
     } finally {
       if (showLoader) {
         setDocumentsLoading(false);
@@ -136,7 +139,9 @@ export default function DocumentsPage() {
   }, [fetchDocuments]);
 
   useEffect(() => {
-    const hasProcessingDocuments = documents.some((document) => document.status === "processing");
+    const hasProcessingDocuments = documents.some(
+      (document) => document.status === "processing"
+    );
 
     if (!hasProcessingDocuments) return;
 
@@ -178,11 +183,13 @@ export default function DocumentsPage() {
       });
 
       const data = await res.json();
+
       if (data.ok) {
         addToast({
           type: "success",
           title: "Document uploaded",
         });
+
         fetchDocuments(false);
       }
     } catch {
@@ -205,7 +212,10 @@ export default function DocumentsPage() {
       });
 
       setDocuments((prev) => prev.filter((d) => d._id !== id));
-      setSelectedDocumentIds((prev) => prev.filter((selectedId) => selectedId !== id));
+      setSelectedDocumentIds((prev) =>
+        prev.filter((selectedId) => selectedId !== id)
+      );
+
       addToast({
         type: "success",
         title: "Document deleted",
@@ -246,8 +256,11 @@ export default function DocumentsPage() {
 
   function formatSize(bytes?: number) {
     if (!bytes) return null;
+
     const kb = bytes / 1024;
+
     if (kb < 1024) return `${kb.toFixed(1)} KB`;
+
     return `${(kb / 1024).toFixed(1)} MB`;
   }
 
@@ -265,7 +278,6 @@ export default function DocumentsPage() {
           style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
         >
           <div className="p-8 max-w-6xl mx-auto">
-            {/* Header */}
             <div className="mb-8 flex flex-col gap-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -298,7 +310,6 @@ export default function DocumentsPage() {
                 </>
               </div>
 
-              {/* Search */}
               <div className="relative max-w-md">
                 <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
                 <Input
@@ -332,7 +343,6 @@ export default function DocumentsPage() {
               </div>
             )}
 
-            {/* Empty state conditional */}
             {!documentsLoading && !documentsError && filteredDocs.length === 0 && (
               <div className="py-4 w-full">
                 {documents.length > 0 ? (
@@ -343,11 +353,16 @@ export default function DocumentsPage() {
                       </EmptyMedia>
                       <EmptyTitle>No results found</EmptyTitle>
                       <EmptyDescription>
-                        We couldn&apos;t find any matches for &quot;{search}&quot;. Check your spelling or try another keyword.
+                        We couldn&apos;t find any matches for &quot;{search}
+                        &quot;. Check your spelling or try another keyword.
                       </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent>
-                      <Button variant="outline" size="sm" onClick={() => setSearch("")}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSearch("")}
+                      >
                         Clear search filter
                       </Button>
                     </EmptyContent>
@@ -360,11 +375,15 @@ export default function DocumentsPage() {
                       </EmptyMedia>
                       <EmptyTitle>No documents uploaded</EmptyTitle>
                       <EmptyDescription>
-                        Upload text, PDFs, or markdown knowledge elements to enrich your automation environment vectors.
+                        Upload text, PDFs, or markdown knowledge elements to
+                        enrich your automation environment vectors.
                       </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent>
-                      <Button onClick={() => fileInputRef.current?.click()} className="gap-2">
+                      <Button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="gap-2"
+                      >
                         <Upload className="size-4" />
                         Upload Document
                       </Button>
@@ -374,7 +393,6 @@ export default function DocumentsPage() {
               </div>
             )}
 
-            {/* Document Grid */}
             {!documentsLoading && !documentsError && filteredDocs.length > 0 && (
               <div className="space-y-5">
                 {selectedDocumentIds.length > 0 && (
@@ -436,7 +454,6 @@ export default function DocumentsPage() {
                             : ""
                         }`}
                       >
-                        {/* Top */}
                         <div className="flex items-start gap-3">
                           <div className="p-2 rounded-md bg-muted">
                             {getFileIcon(doc.fileType)}
@@ -456,7 +473,10 @@ export default function DocumentsPage() {
                                 }}
                               >
                                 {isSelected && (
-                                  <Badge variant="secondary" className="hidden text-xs sm:inline-flex">
+                                  <Badge
+                                    variant="secondary"
+                                    className="hidden text-xs sm:inline-flex"
+                                  >
                                     Selected
                                   </Badge>
                                 )}
@@ -464,7 +484,9 @@ export default function DocumentsPage() {
                                 <Checkbox
                                   checked={isSelected}
                                   aria-label={`Select ${doc.title || "Untitled"}`}
-                                  onCheckedChange={() => toggleDocumentSelection(doc._id)}
+                                  onCheckedChange={() =>
+                                    toggleDocumentSelection(doc._id)
+                                  }
                                   onKeyDown={(e) => {
                                     e.stopPropagation();
                                   }}
@@ -475,7 +497,9 @@ export default function DocumentsPage() {
                             <div className="flex flex-wrap items-center gap-2 mt-2">
                               {doc.status && (
                                 <Badge
-                                  variant={isFailed ? "destructive" : "secondary"}
+                                  variant={
+                                    isFailed ? "destructive" : "secondary"
+                                  }
                                   className="text-xs"
                                 >
                                   {isFailed ? "Failed" : doc.status}
@@ -486,7 +510,10 @@ export default function DocumentsPage() {
                                 {doc.fileType}
                               </Badge>
 
-                              <Badge variant="outline" className="text-xs font-mono">
+                              <Badge
+                                variant="outline"
+                                className="text-xs font-mono"
+                              >
                                 {doc.chunkCount} chunks
                               </Badge>
 
@@ -500,19 +527,30 @@ export default function DocumentsPage() {
                             {(isProcessing || isFailed) && (
                               <div className="mt-4 space-y-2">
                                 <div className="flex items-center justify-between gap-3 text-xs">
-                                  <span className={isFailed ? "text-destructive" : "text-muted-foreground"}>
+                                  <span
+                                    className={
+                                      isFailed
+                                        ? "text-destructive"
+                                        : "text-muted-foreground"
+                                    }
+                                  >
                                     {getProcessingLabel(doc)}
                                   </span>
+
                                   {!isFailed && (
                                     <span className="font-mono text-muted-foreground">
                                       {progress}%
                                     </span>
                                   )}
                                 </div>
+
                                 <Progress
                                   value={progress}
-                                  className={`h-1.5 ${isFailed ? "[&>div]:bg-destructive" : ""}`}
+                                  className={`h-1.5 ${
+                                    isFailed ? "[&>div]:bg-destructive" : ""
+                                  }`}
                                 />
+
                                 {isFailed && doc.processingError && (
                                   <p className="line-clamp-2 text-xs text-muted-foreground">
                                     {doc.processingError}
@@ -523,7 +561,6 @@ export default function DocumentsPage() {
                           </div>
                         </div>
 
-                        {/* Bottom */}
                         <div className="flex justify-between items-center mt-6">
                           <span className="text-xs text-muted-foreground">
                             {doc.createdAt.slice(0, 10)}
