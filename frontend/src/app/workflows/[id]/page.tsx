@@ -90,6 +90,8 @@ function getTypeColor(type: string) {
       return "bg-green-500/20 text-green-400 border-green-500/30";
     case "Document":
       return "bg-amber-500/20 text-amber-400 border-amber-500/30";
+    case "Approval":
+      return "bg-red-500/20 text-red-400 border-red-500/30";
     default:
       return "bg-muted text-muted-foreground";
   }
@@ -105,6 +107,8 @@ function normalizeStepType(type: string) {
       return "HTTP";
     case "document_query":
       return "Document";
+    case "approval":
+      return "Approval";
     case "email":
     case "file":
     case "browser":
@@ -162,6 +166,11 @@ function getStepDescription(step: WorkflowStep) {
     const url = step.url || "❌ url not set";
 
     return `Browser ${action} | URL: ${url}`;
+  }
+
+  /* ---------- APPROVAL ---------- */
+  if (type === "approval") {
+    return step.approvalMessage || "Approval required before continuing";
   }
 
   return "No configuration";
