@@ -23,6 +23,7 @@ import type {
   WorkflowEdge,
   WorkflowDocument,
   McpTool,
+  NodeDefinition,
 } from '@/types/workflow';
 
 type StepNode = {
@@ -65,13 +66,28 @@ function getNodeColor(type: string) {
 function buildNodePreview(
   step: WorkflowNode | undefined,
   edges: WorkflowEdge[],
-  allSteps: WorkflowNode[]
+  allSteps: WorkflowNode[],
+  nodeDefinitions?: NodeDefinition[]
 ) {
   const rows: { name: string; type: string }[] = [];
 
   if (!step) return rows;
 
-  if (step.type === 'LLM') {
+  // Dynamic fields preview based on schema definitions
+  const nodeDef = nodeDefinitions?.find((d) => d.id === step.type);
+  if (nodeDef) {
+    nodeDef.fields.forEach((f) => {
+      const val = step.config?.[f.name] ?? step[f.name];
+      if (val !== undefined && val !== '') {
+        rows.push({
+          name: f.label || f.name,
+          type: typeof val === 'object' ? 'object' : String(val),
+        });
+      }
+    });
+  }
+
+  if (step.type === 'LLM' && !nodeDef) {
     rows.push({ name: 'prompt', type: 'string' });
 
     if (step.useMemory) {
@@ -82,26 +98,26 @@ function buildNodePreview(
     rows.push({ name: 'output', type: 'text' });
   }
 
-  if (step.type === 'HTTP') {
+  if (step.type === 'HTTP' && !nodeDef) {
     rows.push({ name: 'url', type: 'string' });
     rows.push({ name: 'method', type: 'string' });
     rows.push({ name: 'response', type: 'json' });
   }
 
-  if (step.type === 'Delay') {
+  if (step.type === 'Delay' && !nodeDef) {
     rows.push({ name: 'seconds', type: 'number' });
   }
 
-  if (step.type === 'Tool') {
+  if (step.type === 'Tool' && !nodeDef) {
     rows.push({ name: 'tool', type: 'string' });
   }
 
-  if (step.type === 'MCP') {
+  if (step.type === 'MCP' && !nodeDef) {
     rows.push({ name: 'server', type: step.serverId || 'unset' });
     rows.push({ name: 'tool', type: step.toolName || 'unset' });
   }
 
-  if (step.type === 'Document') {
+  if (step.type === 'Document' && !nodeDef) {
     rows.push({ name: 'query', type: 'string' });
     rows.push({ name: 'topK', type: 'number' });
   }
@@ -146,12 +162,13 @@ function buildNodePreview(
 function computeNodes(
   steps: WorkflowNode[],
   flowEdges: WorkflowEdge[],
-  invalidNodeIds: Set<string> = new Set()
+  invalidNodeIds: Set<string> = new Set(),
+  nodeDefinitions?: NodeDefinition[]
 ): StepNode[] {
   if (!steps?.length) return [];
 
   return steps.map((step, index) => {
-    const schema = buildNodePreview(step, flowEdges, steps);
+    const schema = buildNodePreview(step, flowEdges, steps, nodeDefinitions);
     const hasError = invalidNodeIds.has(step.id);
 
     return {
@@ -233,6 +250,7 @@ export default function VisualBuilder({
   onEdgesChange,
   onSave,
   invalidNodeIds = [],
+  nodeDefinitions = [],
 }: {
   steps: WorkflowNode[];
   setSteps: React.Dispatch<React.SetStateAction<WorkflowNode[]>>;
@@ -240,6 +258,7 @@ export default function VisualBuilder({
   onEdgesChange: (edges: WorkflowEdge[]) => void;
   onSave?: () => void;
   invalidNodeIds?: string[];
+  nodeDefinitions?: NodeDefinition[];
 }) {
   usePerformanceMonitor('VisualBuilder');
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -275,7 +294,7 @@ export default function VisualBuilder({
 
   const computedNodes = useMemo(() => {
     const nodesWithErrorsSet = new Set(invalidNodeIds);
-    return computeNodes(steps, flowEdges as unknown as WorkflowEdge[], nodesWithErrorsSet);
+    return computeNodes(steps, flowEdges as unknown as WorkflowEdge[], nodesWithErrorsSet, nodeDefinitions);
   }, [steps, flowEdges, invalidNodeIds]);
 
   const [nodes, setNodes, _onNodesChange] = useNodesState(computedNodes);
@@ -557,14 +576,15 @@ export default function VisualBuilder({
   );
 
   const updateNodeLabel = useCallback(
-    (stepId: string, name: string, type: StepType) => {
+    (stepId: string, name: string, type: string) => {
       const step = steps.find((s) => s.id === stepId);
       if (!step) return;
 
       const schema = buildNodePreview(
         { ...step, name, type },
         flowEdges as unknown as WorkflowEdge[],
-        steps
+        steps,
+        nodeDefinitions
       );
 
       setNodes((nds) =>
@@ -613,7 +633,7 @@ export default function VisualBuilder({
         )
       );
     },
-    [steps, flowEdges, setNodes]
+    [steps, flowEdges, setNodes, nodeDefinitions]
   );
 
   useEffect(() => {
@@ -698,7 +718,7 @@ export default function VisualBuilder({
   /* ---------- ADD NODE ---------- */
 
   const addNode = useCallback(() => {
-    const id = generateNodeId('LLM');
+    const id = generateNodeId('llm');
 
     const node: StepNode = {
       id,
@@ -710,7 +730,7 @@ export default function VisualBuilder({
       data: {
         label: (
           <div className="flex items-center justify-between gap-2">
-            <span>New Step (LLM)</span>
+            <span>New Step</span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -726,7 +746,7 @@ export default function VisualBuilder({
       style: {
         padding: '12px 16px',
         borderRadius: '12px',
-        border: `1px solid ${getNodeColor('LLM')}`,
+        border: `1px solid ${getNodeColor('llm')}`,
         background: 'var(--card)',
         color: 'var(--foreground)',
         fontSize: '14px',
@@ -735,7 +755,7 @@ export default function VisualBuilder({
         cursor: 'pointer',
         maxWidth: 240,
         textAlign: 'center' as const,
-        boxShadow: `0 0 0 1px ${getNodeColor('LLM')}20, 0 2px 6px rgba(0,0,0,0.05)`,
+        boxShadow: `0 0 0 1px ${getNodeColor('llm')}20, 0 2px 6px rgba(0,0,0,0.05)`,
         touchAction: 'none',
       },
     };
@@ -751,7 +771,7 @@ export default function VisualBuilder({
       {
         id,
         name: 'New Step',
-        type: 'LLM',
+        type: 'llm',
         prompt: '',
       },
     ]);

@@ -89,19 +89,20 @@ async function executeStep(step, context = {}, agent = null) {
  */
 async function internalExecuteStep(step, context, agent, validatedStepId, finalTimeoutMs) {
   const stepType = String(step.type || '').toLowerCase();
+  const config = step.config || step;
 
   // =========================
   // LLM
   // =========================
   if (stepType === 'llm') {
-    const prompt = interpolate(step.prompt || '', context);
+    const prompt = interpolate(config.prompt || '', context);
     let finalPrompt = prompt;
     let memoryMetrics = null;
 
-    if (step.useMemory && agent) {
+    if (config.useMemory && agent) {
       const { retrieveMemory, storeMemory } = require('../services/memoryService');
 
-      const memories = await retrieveMemory(agent, prompt, step.memoryTopK || 5);
+      const memories = await retrieveMemory(agent, prompt, config.memoryTopK || 5);
 
       memoryMetrics = {
         useMemory: true,
@@ -140,7 +141,7 @@ Use the MEMORY section when relevant.`;
         provider: agent?.config?.provider,
         model: agent?.config?.model,
         temperature: agent?.config?.temperature,
-        ...step.options,
+        ...config.options,
       });
 
       if (llmRes?.text) {
@@ -175,7 +176,7 @@ Use the MEMORY section when relevant.`;
       provider: agent?.config?.provider,
       model: agent?.config?.model,
       temperature: agent?.config?.temperature,
-      ...step.options,
+      ...config.options,
     });
 
     return {
@@ -194,7 +195,7 @@ Use the MEMORY section when relevant.`;
   // DELAY
   // =========================
   if (stepType === 'delay') {
-    const sec = Number(step.seconds ?? step.delay ?? 0);
+    const sec = Number(config.seconds ?? config.delay ?? 0);
 
     await new Promise((resolve) => setTimeout(resolve, sec * 1000));
 
@@ -215,8 +216,8 @@ Use the MEMORY section when relevant.`;
   if (stepType === 'http') {
     let parsedBody = null;
 
-    if (step.body) {
-      const interpolated = interpolate(step.body, context);
+    if (config.body) {
+      const interpolated = interpolate(config.body, context);
 
       try {
         parsedBody = JSON.parse(interpolated);
@@ -226,11 +227,11 @@ Use the MEMORY section when relevant.`;
     }
 
     const response = await axios({
-      method: (step.method || 'GET').toLowerCase(),
-      url: interpolate(step.url || '', context),
+      method: (config.method || 'GET').toLowerCase(),
+      url: interpolate(config.url || '', context),
       data: parsedBody,
-      headers: step.headers || {},
-      timeout: step.timeout || 30000,
+      headers: config.headers || {},
+      timeout: config.timeout || 30000,
       validateStatus: () => true,
     });
 
@@ -238,7 +239,7 @@ Use the MEMORY section when relevant.`;
       stepId: validatedStepId,
       type: 'http',
       tool: 'http',
-      input: interpolate(step.url || '', context),
+      input: interpolate(config.url || '', context),
       output: response.data,
       success: response.status >= 200 && response.status < 300,
       timestamp: new Date(),
@@ -262,10 +263,10 @@ Use the MEMORY section when relevant.`;
 
     const info = await transporter.sendMail({
       from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-      to: interpolate(step.to || '', context),
-      subject: interpolate(step.subject || '', context),
-      text: interpolate(step.text || '', context),
-      html: interpolate(step.html || '', context),
+      to: interpolate(config.to || '', context),
+      subject: interpolate(config.subject || '', context),
+      text: interpolate(config.text || '', context),
+      html: interpolate(config.html || '', context),
     });
 
     return {
@@ -285,13 +286,13 @@ Use the MEMORY section when relevant.`;
   // FILE
   // =========================
   if (stepType === 'file') {
-    const filePath = resolveWorkflowFilePath(step.path);
+    const filePath = resolveWorkflowFilePath(config.path);
 
     fs.mkdirSync(path.dirname(filePath), {
       recursive: true,
     });
 
-    if (step.action === 'read') {
+    if (config.action === 'read') {
       return {
         stepId: validatedStepId,
         type: 'file',
@@ -302,9 +303,9 @@ Use the MEMORY section when relevant.`;
       };
     }
 
-    const content = interpolate(step.content || context.last?.output || '', context);
+    const content = interpolate(config.content || context.last?.output || '', context);
 
-    if (step.action === 'append') {
+    if (config.action === 'append') {
       fs.appendFileSync(filePath, content);
     } else {
       fs.writeFileSync(filePath, content);
@@ -326,14 +327,14 @@ Use the MEMORY section when relevant.`;
   if (stepType === 'document_query') {
     const { queryDocument } = require('../services/documentService');
 
-    const query = interpolate(step.query || '', context);
+    const query = interpolate(config.query || '', context);
 
     const chunks = await queryDocument(
       agent,
       context.userId,
-      step.documentId,
+      config.documentId,
       query,
-      step.topK || 3
+      config.topK || 3
     );
 
     const contextText = chunks
@@ -366,13 +367,13 @@ Use the MEMORY section when relevant.`;
 
     let evaluation = false;
 
-    if (step.conditionType === 'contains') {
+    if (config.conditionType === 'contains') {
       evaluation = output.toLowerCase().includes(
-        String(step.value || '')
+        String(config.value || '')
           .toLowerCase()
           .trim()
       );
-    } else if (step.conditionType === 'boolean') {
+    } else if (config.conditionType === 'boolean') {
       const aiResult = await runLLM(`Answer only true or false:\n${output}`, {
         provider: agent?.config?.provider,
         model: agent?.config?.model,
@@ -417,9 +418,9 @@ Use the MEMORY section when relevant.`;
   if (stepType === 'mcp') {
     const execution = await invokeMcpTool({
       userId: context.userId,
-      serverId: step.serverId,
-      toolName: step.toolName,
-      argumentsInput: step.arguments,
+      serverId: config.serverId,
+      toolName: config.toolName,
+      argumentsInput: config.arguments,
       context,
       interpolate,
       timeoutMs: finalTimeoutMs,
@@ -438,13 +439,33 @@ Use the MEMORY section when relevant.`;
   // =========================
   // TOOL REGISTRY
   // =========================
-  if (hasTool(stepType)) {
-    const toolResult = await dispatchTool(stepType, step, context);
+
+  // Legacy support: type:'tool' with sub-type in step.tool or config.tool
+  // Old workflows stored e.g. { type: 'tool', tool: 'file', path: '...' }
+  let resolvedStepType = stepType;
+  if (stepType === 'tool') {
+    const subTool = config.tool || step.tool;
+    if (subTool) {
+      resolvedStepType = String(subTool).toLowerCase();
+    } else {
+      if (config.path || (config.action && ['read','write','append','remove','list'].includes(config.action))) {
+        resolvedStepType = 'file';
+      } else if (config.to || config.subject) {
+        resolvedStepType = 'email';
+      } else if (config.url || config.action === 'evaluate') {
+        resolvedStepType = 'browser';
+      }
+    }
+  }
+
+  if (hasTool(resolvedStepType)) {
+    // Pass config to dispatchTool for cleaner tool implementations
+    const toolResult = await dispatchTool(resolvedStepType, config, context);
 
     return {
       stepId: validatedStepId,
-      type: stepType,
-      tool: stepType,
+      type: resolvedStepType,
+      tool: resolvedStepType,
       output: toolResult,
       success: true,
       timestamp: new Date(),

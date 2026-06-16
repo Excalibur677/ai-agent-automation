@@ -33,6 +33,7 @@ import type {
   WorkflowPayload as Workflow,
   BackendStep as WorkflowStep,
   WorkflowAgent as Agent,
+  NodeDefinition,
 } from '@/types/workflow';
 
 interface CreateTaskModalProps {
@@ -83,90 +84,58 @@ function getStepColor(status: string) {
 }
 
 function getTypeColor(type: string) {
-  switch (type) {
-    case 'LLM':
-      return 'bg-primary/20 text-primary border-primary/30';
-    case 'HTTP':
-      return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-    case 'Delay':
-      return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-    case 'Tool':
-      return 'bg-green-500/20 text-green-400 border-green-500/30';
-    case 'Document':
-      return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
-    default:
-      return 'bg-muted text-muted-foreground';
-  }
-}
-
-function normalizeStepType(type: string) {
-  switch (type.toLowerCase()) {
+  switch ((type || '').toLowerCase()) {
     case 'llm':
-      return 'LLM';
-    case 'delay':
-      return 'Delay';
+      return 'bg-primary/20 text-primary border-primary/30';
     case 'http':
-      return 'HTTP';
+      return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+    case 'delay':
+      return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
     case 'document_query':
-      return 'Document';
-    case 'email':
-    case 'file':
-    case 'browser':
-      return 'Tool';
+    case 'document':
+      return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+    case 'mcp':
+      return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
+    case 'condition':
+    case 'switch':
+      return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    case 'parallel':
+    case 'join':
+      return 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
     default:
-      return 'Tool';
+      // All dynamically discovered tool nodes (email, file, browser, github, slack, test_tool, etc.)
+      return 'bg-green-500/20 text-green-400 border-green-500/30';
   }
 }
 
-function getStepDescription(step: WorkflowStep) {
-  const type = (step.type || '').toLowerCase();
+/**
+ * Schema-driven step description.
+ * Finds the node definition by type and returns the first non-empty field values.
+ * Falls back gracefully for types not yet loaded.
+ */
+function getStepDescription(step: WorkflowStep, nodeDefinitions: NodeDefinition[] = []): string {
+  const lowerType = (step.type || '').toLowerCase();
+  const def = nodeDefinitions.find((d) => d.id.toLowerCase() === lowerType);
 
-  /* ---------- LLM ---------- */
-  if (step.prompt) {
-    return step.prompt.slice(0, 160);
-  }
-
-  /* ---------- HTTP ---------- */
-  if (step.url && step.method) {
-    return `${step.method} ${step.url}`;
-  }
-
-  /* ---------- DELAY ---------- */
-  if (step.seconds) {
-    return `Wait for ${step.seconds} seconds`;
-  }
-
-  /* ---------- DOCUMENT QUERY ---------- */
-  if (type === 'document_query') {
-    if (step.query) {
-      return `Query: ${step.query.slice(0, 160)}`;
+  if (def && def.fields.length > 0) {
+    const parts: string[] = [];
+    for (const field of def.fields) {
+      const val = step.config?.[field.name] ?? (step as any)[field.name];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        const display = String(val).slice(0, 160);
+        parts.push(`${field.label}: ${display}${display.length < String(val).length ? '\u2026' : ''}`);
+        if (parts.length >= 2) break;
+      }
     }
-    return 'Document query step';
+    return parts.length > 0 ? parts.join(' | ') : `${def.name} — not configured`;
   }
 
-  /* ---------- EMAIL TOOL ---------- */
-  if (type === 'email') {
-    const to = step.to || '❌ no recipient';
-    const subject = step.subject || 'no subject';
-
-    return `Email → ${to} | Subject: ${subject}`;
-  }
-
-  /* ---------- FILE TOOL ---------- */
-  if (type === 'file') {
-    const action = step.action || 'action';
-    const path = step.path || '❌ path not set';
-
-    return `File ${action} | Path: ${path}`;
-  }
-
-  /* ---------- BROWSER TOOL ---------- */
-  if (type === 'browser') {
-    const action = step.action || 'action';
-    const url = step.url || '❌ url not set';
-
-    return `Browser ${action} | URL: ${url}`;
-  }
+  // Fallback: check common config fields directly
+  const config = step.config || {};
+  const anyStep = step as any;
+  if (config.prompt || anyStep.prompt) return (config.prompt || anyStep.prompt).slice(0, 160);
+  if (config.url && config.method) return `${config.method} ${config.url}`;
+  if (config.seconds) return `Wait for ${config.seconds} seconds`;
 
   return 'No configuration';
 }
@@ -183,6 +152,7 @@ export default function WorkflowDetailPage() {
   const [selectedAgent, setSelectedAgent] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
+  const [nodeDefinitions, setNodeDefinitions] = useState<NodeDefinition[]>([]);
   const { addToast } = useToast();
 
   function getStepStatus(stepId: string): 'pending' | 'completed' | 'failed' {
@@ -292,8 +262,8 @@ export default function WorkflowDetailPage() {
       workflowName: workflow?.name,
       stepId: step.stepId,
       stepName: step.name ?? 'Unnamed step',
-      stepType: normalizeStepType(step.type),
-      stepDescription: getStepDescription(step),
+      stepType: step.type,
+      stepDescription: getStepDescription(step, nodeDefinitions),
     });
   }
 
@@ -361,10 +331,19 @@ export default function WorkflowDetailPage() {
     });
   }
 
-  /** Load workflow + agents */
+  /** Load workflow + agents + node definitions */
   useEffect(() => {
     fetchWorkflow();
     fetchAgents();
+    // Fetch schema-driven node definitions
+    fetch(apiUrl('/workflows/node-definitions'), {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok) setNodeDefinitions(data.nodeDefinitions || []);
+      })
+      .catch(console.error);
   }, [id]);
   useEffect(() => {
     if (!latestTask) return;
@@ -502,16 +481,16 @@ export default function WorkflowDetailPage() {
                           <div className="mb-2 flex items-center gap-3">
                             <Badge
                               variant="outline"
-                              className={getTypeColor(normalizeStepType(step.type))}
+                              className={getTypeColor(step.type)}
                             >
-                              {normalizeStepType(step.type)}
+                              {step.type}
                             </Badge>
 
                             <h3 className="font-semibold">{step.name}</h3>
                           </div>
 
                           <p className="text-sm text-muted-foreground line-clamp-3">
-                            {getStepDescription(step)}
+                            {getStepDescription(step, nodeDefinitions)}
                           </p>
                         </div>
                       </div>
