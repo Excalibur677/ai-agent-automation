@@ -316,6 +316,7 @@ async function chatWithDocument(req, res) {
       const chunkDocumentId = chunk.documentId.toString();
 
       return {
+        _id: chunk._id,
         documentId: chunkDocumentId,
         title: documentTitleById.get(chunkDocumentId) || "Untitled document",
         chunkIndex: chunk.chunkIndex,
@@ -366,7 +367,9 @@ Chunk ${chunk.chunkIndex}
     const seenSources = new Set();
     const sources = includedChunks
       .filter((chunk) => {
-        const sourceKey = `${chunk.documentId}:${chunk.chunkIndex}`;
+        const sourceKey = chunk._id
+          ? chunk._id.toString()
+          : `${chunk.documentId}:${chunk.chunkIndex}`;
 
         if (seenSources.has(sourceKey)) {
           return false;

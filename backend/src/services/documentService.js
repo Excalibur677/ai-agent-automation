@@ -53,6 +53,86 @@ function cosineSimilarity(vecA, vecB) {
     return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+function isComparisonQuery(query) {
+
+    const normalizedQuery = (query || "").toLowerCase();
+
+    return [
+        "compare",
+        "contrast",
+        "difference",
+        "differences",
+        "similar",
+        "similarities",
+        "both",
+        "all documents",
+        "across documents"
+    ].some(term => normalizedQuery.includes(term));
+}
+
+function getChunkKey(chunk) {
+
+    return chunk._id
+        ? chunk._id.toString()
+        : `${chunk.documentId.toString()}:${chunk.chunkIndex}`;
+}
+
+function selectBalancedChunks(scoredChunks, documentIds, limit, query) {
+
+    const chunksByDocumentId = new Map();
+
+    for (const chunk of scoredChunks) {
+        const documentId = chunk.documentId.toString();
+
+        if (!chunksByDocumentId.has(documentId)) {
+            chunksByDocumentId.set(documentId, []);
+        }
+
+        chunksByDocumentId.get(documentId).push(chunk);
+    }
+
+    for (const chunks of chunksByDocumentId.values()) {
+        chunks.sort((a, b) => b.score - a.score);
+    }
+
+    const selectedChunks = [];
+    const seenChunkKeys = new Set();
+
+    const addChunk = (chunk) => {
+        if (!chunk) return;
+
+        const chunkKey = getChunkKey(chunk);
+
+        if (seenChunkKeys.has(chunkKey)) return;
+
+        seenChunkKeys.add(chunkKey);
+        selectedChunks.push(chunk);
+    };
+
+    // Balanced retrieval applies to every multi-document query; comparison detection keeps the intent explicit.
+    const shouldPrioritizeCoverage = documentIds.length > 1 || isComparisonQuery(query);
+
+    if (!shouldPrioritizeCoverage) {
+        return scoredChunks.slice(0, limit);
+    }
+
+    for (const documentId of documentIds.map(id => id.toString())) {
+        addChunk(chunksByDocumentId.get(documentId)?.[0]);
+    }
+
+    // For multi-document comparison, source coverage is prioritized over strict topK.
+    if (selectedChunks.length >= limit) {
+        return selectedChunks;
+    }
+
+    for (const chunk of scoredChunks) {
+        if (selectedChunks.length >= limit) break;
+        addChunk(chunk);
+    }
+
+    return selectedChunks;
+}
+
 async function processDocument(agent, document, text) {
 
     try {
@@ -205,8 +285,12 @@ async function queryDocuments(agent, userId, documentIds, query, topK = 3) {
     // Sort by similarity score
     scored.sort((a, b) => b.score - a.score);
 
-    // Return topK results
-    return scored.slice(0, limit);
+    if (uniqueDocumentIds.length === 1) {
+        // Return topK results
+        return scored.slice(0, limit);
+    }
+
+    return selectBalancedChunks(scored, uniqueDocumentIds, limit, query);
 }
 
 module.exports = {

@@ -67,6 +67,14 @@ type ChatMessage = {
   sources?: RagSource[];
 };
 
+type SourceGroup = {
+  documentId: string;
+  title: string;
+  chunkIndexes: number[];
+  excerptCount: number;
+  bestScore?: number;
+};
+
 const suggestedPrompts = [
   "Summarize the selected documents",
   "Compare the main differences",
@@ -93,6 +101,40 @@ function formatSize(bytes?: number) {
 function formatScore(score?: number) {
   if (typeof score !== "number") return null;
   return score.toFixed(2);
+}
+
+function groupSourcesByDocument(sources: RagSource[] = []) {
+  const groups = new Map<string, SourceGroup & { seenChunks: Set<number> }>();
+
+  for (const source of sources) {
+    const groupKey = source.documentId || source.title || "unknown-source";
+    const existingGroup = groups.get(groupKey);
+    const group = existingGroup || {
+      documentId: source.documentId,
+      title: source.title || "Untitled",
+      chunkIndexes: [],
+      excerptCount: 0,
+      bestScore: undefined,
+      seenChunks: new Set<number>()
+    };
+
+    if (!group.seenChunks.has(source.chunkIndex)) {
+      group.seenChunks.add(source.chunkIndex);
+      group.chunkIndexes.push(source.chunkIndex);
+      group.excerptCount += 1;
+    }
+
+    if (
+      typeof source.score === "number" &&
+      (typeof group.bestScore !== "number" || source.score > group.bestScore)
+    ) {
+      group.bestScore = source.score;
+    }
+
+    groups.set(groupKey, group);
+  }
+
+  return Array.from(groups.values()).map(({ seenChunks, ...group }) => group);
 }
 
 function formatSourceMeta(document: DocumentMeta) {
@@ -531,6 +573,7 @@ function MultiDocumentChatContent() {
                   <div className="space-y-7">
                     {messages.map((message, index) => {
                       const isUser = message.role === "user";
+                      const groupedSources = groupSourcesByDocument(message.sources || []);
 
                       return (
                         <div
@@ -562,24 +605,30 @@ function MultiDocumentChatContent() {
 
                             {!isUser && (
                               <div className="mt-3 flex w-full flex-col gap-3">
-                                {message.sources && message.sources.length > 0 && (
+                                {groupedSources.length > 0 && (
                                   <div className="rounded-lg border border-border bg-background/70 p-3">
                                     <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                      Sources
+                                      Sources used
                                     </p>
-                                    <div className="flex flex-wrap gap-2">
-                                      {message.sources.map((source) => (
+                                    <div className="grid gap-2">
+                                      {groupedSources.map((sourceGroup) => (
                                         <Link
-                                          key={`${source.documentId}-${source.chunkIndex}`}
-                                          href={`/documents/${source.documentId}`}
-                                          className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs transition-colors hover:border-primary/60 hover:bg-primary/10"
+                                          key={sourceGroup.documentId || sourceGroup.title}
+                                          href={`/documents/${sourceGroup.documentId}`}
+                                          className="rounded-md border border-border bg-muted/30 px-3 py-2.5 text-xs transition-colors hover:border-primary/50 hover:bg-primary/10"
                                         >
-                                          <span className="block max-w-52 truncate font-medium">
-                                            {source.title || "Untitled"}
+                                          <span className="block truncate font-medium">
+                                            {sourceGroup.title || "Untitled"}
                                           </span>
-                                          <span className="text-muted-foreground">
-                                            Chunk {source.chunkIndex}
-                                            {formatScore(source.score) ? ` | Score ${formatScore(source.score)}` : ""}
+                                          <span className="mt-1 block text-muted-foreground">
+                                            {sourceGroup.excerptCount} {sourceGroup.excerptCount === 1 ? "excerpt" : "excerpts"}
+                                            {formatScore(sourceGroup.bestScore)
+                                              ? ` · Best score ${formatScore(sourceGroup.bestScore)}`
+                                              : ""}
+                                          </span>
+                                          <span className="mt-1 block text-muted-foreground">
+                                            {sourceGroup.chunkIndexes.length === 1 ? "Chunk" : "Chunks"}{" "}
+                                            {sourceGroup.chunkIndexes.join(", ")}
                                           </span>
                                         </Link>
                                       ))}
