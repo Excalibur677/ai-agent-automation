@@ -3,9 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const { runLLM } = require('./llmAdapter');
-const { runGitHub } = require('../integrations/github');
-const { runSlack } = require('../integrations/slack');
-const { runDiscord } = require('../integrations/discord');
 const { invokeTool: invokeMcpTool } = require('../mcp/executionAdapter');
 const { hasTool, dispatchTool } = require('../tools/registry');
 require('dotenv').config();
@@ -330,21 +327,6 @@ async function internalExecuteStep(step, context, agent, validatedStepId, finalT
       success: true,
       timestamp: new Date(),
     };
-  }
-
-  if (stepType === 'github') {
-    const output = await runGitHub(step, context, interpolate);
-    return { stepId: validatedStepId, type: 'github', tool: 'github', output, success: true, timestamp: new Date() };
-  }
-
-  if (stepType === 'slack') {
-    const output = await runSlack(step, context, interpolate);
-    return { stepId: validatedStepId, type: 'slack', tool: 'slack', output, success: true, timestamp: new Date() };
-  }
-
-  if (stepType === 'discord') {
-    const output = await runDiscord(step, context, interpolate);
-    return { stepId: validatedStepId, type: 'discord', tool: 'discord', output, success: true, timestamp: new Date() };
   }
 
   return {
