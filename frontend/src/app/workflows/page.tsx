@@ -103,6 +103,7 @@ const WorkflowCard = memo(
     onEdit,
     onDelete,
     onUpdate,
+    onRenameSuccess,
   }: {
     workflow: Workflow;
     agentName: string;
@@ -111,6 +112,7 @@ const WorkflowCard = memo(
     onEdit: (workflow: Workflow) => void;
     onDelete: (workflow: Workflow) => void;
     onUpdate: () => void;
+    onRenameSuccess: (id: string, newName: string) => void; 
   }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(workflow.name);
@@ -144,7 +146,8 @@ const WorkflowCard = memo(
         });
         if (!res.ok) throw new Error('Update failed');
         onUpdate(); // refresh parent
-        addToast({ type: 'success', title: 'Workflow renamed' });
+        onRenameSuccess(workflow._id, editName);
+        addToast({ type: "success", title: "Workflow renamed" });
       } catch (err) {
         console.error(err);
         setEditName(workflow.name);
@@ -446,6 +449,9 @@ export default function WorkflowsPage() {
   const handleEditWorkflow = useCallback((workflow: Workflow) => {
     setEditingWorkflow(workflow);
   }, []);
+  const handleRenameSuccess = useCallback((id: string, newName: string) => {
+    setEditingWorkflow(prev => prev && prev._id === id ? { ...prev, name: newName } : prev);
+  }, []);
 
   // ─── Filter Logic ───
   const filteredWorkflows = useMemo(() => {
@@ -508,7 +514,6 @@ export default function WorkflowsPage() {
 
     router.replace(`${pathname}?${params.toString()}`);
   }
-
   return (
     <AuthGuard>
       <div className="flex min-h-screen">
@@ -557,7 +562,6 @@ export default function WorkflowsPage() {
                 ))}
               </div>
             ) : (
-              // Workflows exist! Show the new Toolbar and Grid
               <div className="space-y-6">
                 {/* ─── Control Toolbar ─── */}
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -644,10 +648,12 @@ export default function WorkflowsPage() {
                         onEdit={handleEditWorkflow}
                         onDelete={handleDeleteClick}
                         onUpdate={fetchWorkflows}
+                        onRenameSuccess={handleRenameSuccess}
                       />
                     ))}
                   </div>
                 )}
+              </div>
               </div>
             )}
           </div>
