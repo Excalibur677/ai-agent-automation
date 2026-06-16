@@ -293,13 +293,10 @@ async function runWorkerLoop() {
 
               if (!parallelSuccess && strategy === 'fail-fast') return { success: false, branchContext };
 
-              const branchJoinNodes = branchResults
-                .filter((r) => r.joinNode)
-                .map((r) => getStepId(r.joinNode));
-              const uniqueJoinNodes = [...new Set(branchJoinNodes)];
+              const uniqueJoinNodes = [...new Set(branchResults.map((r) => r.joinNode ? getStepId(r.joinNode) : 'MISSING_JOIN'))];
 
-              if (uniqueJoinNodes.length > 1) {
-                const errMsg = `Join Synchronization Failed: Divergent Join Nodes detected (${uniqueJoinNodes.join(', ')})`;
+              if (uniqueJoinNodes.includes('MISSING_JOIN') || uniqueJoinNodes.length > 1) {
+                const errMsg = `Join Synchronization Failed: All branches must converge to exactly one Join node. Detected: [${uniqueJoinNodes.join(', ')}]`;
                 console.error(`❌ ${errMsg}`);
                 
                 const errorResult = {
