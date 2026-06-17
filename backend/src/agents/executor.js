@@ -12,6 +12,7 @@ const handlers = {
   switch: require('./handlers/switch.handler'),
   mcp: require('./handlers/mcp.handler'),
   tool: require('./handlers/tool.handler'),
+  approval: require('./handlers/approval.handler'),
 };
 
 async function executeStep(step, context = {}, agent = null) {

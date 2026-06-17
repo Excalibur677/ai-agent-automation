@@ -97,6 +97,16 @@ const coreNodes = [
     category: "Logic",
     description: "Join parallel branches.",
     fields: []
+  },
+  {
+    id: "approval",
+    name: "Human Approval",
+    version: "1.0.0",
+    category: "Logic",
+    description: "Pause the workflow and wait for human approval before proceeding.",
+    fields: [
+      { name: "approvalMessage", label: "Approval Message", type: "textarea", required: true, default: "Please approve this step" }
+    ]
   }
 ];
 

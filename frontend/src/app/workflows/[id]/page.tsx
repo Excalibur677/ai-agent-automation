@@ -19,6 +19,7 @@ import {
   Download,
   History,
   Globe,
+  ShieldCheck,
 } from 'lucide-react';
 import VersionHistoryDialog from '@/components/workflow/version-history-dialog';
 import ApiSettingsDialog from '@/components/workflow/api-settings-dialog';
@@ -46,6 +47,7 @@ interface CreateTaskModalProps {
 interface StepResult {
   stepId: string;
   success?: boolean;
+  requiresApproval?: boolean;
   output?: unknown;
   timestamp?: string;
 }
@@ -53,7 +55,7 @@ interface StepResult {
 interface Task {
   _id: string;
   name: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'pending_approval' | 'rejected' | 'retrying';
   stepResults?: StepResult[];
 }
 
@@ -65,6 +67,8 @@ function getStepIcon(status: string) {
       return <CheckCircle2 className="size-5 text-success" />;
     case 'running':
       return <Circle className="size-5 animate-pulse text-warning" />;
+    case 'paused':
+      return <ShieldCheck className="size-5 text-amber-500 animate-pulse" />;
     case 'failed':
       return <XCircle className="size-5 text-destructive" />;
     default:
@@ -78,6 +82,8 @@ function getStepColor(status: string) {
       return 'border-success/50 bg-success/5';
     case 'running':
       return 'border-warning/50 bg-warning/5';
+    case 'paused':
+      return 'border-amber-500/50 bg-amber-500/5';
     case 'failed':
       return 'border-destructive/50 bg-destructive/5';
     default:
@@ -158,13 +164,14 @@ export default function WorkflowDetailPage() {
   const [apiSettingsOpen, setApiSettingsOpen] = useState<boolean>(false);
   const { addToast } = useToast();
 
-  function getStepStatus(stepId: string): 'pending' | 'completed' | 'failed' {
+  function getStepStatus(stepId: string): 'pending' | 'completed' | 'failed' | 'paused' {
     if (!latestTask?.stepResults) return 'pending';
 
     const result = latestTask.stepResults.find((r: StepResult) => r.stepId === stepId);
 
     if (!result) return 'pending';
     if (result.success === false) return 'failed';
+    if (result.requiresApproval && latestTask.status === 'pending_approval') return 'paused';
     if (result.success === true) return 'completed';
 
     return 'pending';

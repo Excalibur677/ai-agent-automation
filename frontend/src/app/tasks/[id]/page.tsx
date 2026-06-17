@@ -146,6 +146,39 @@ export default function TaskDetailPage() {
   const { addToast } = useToast();
   const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
   const [approvalFeedback, setApprovalFeedback] = useState("");
+  const [isResuming, setIsResuming] = useState(false);
+
+  async function handleResumeTask() {
+    if (!task) return;
+    setIsResuming(true);
+    try {
+      const res = await fetch(apiUrl(`/tasks/${task._id}/resume`), {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + localStorage.getItem("token"),
+        },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        addToast({
+          title: "Task Resumed",
+          description: "Task execution has been resumed.",
+          type: "success"
+        });
+        refetch();
+      } else {
+        throw new Error(data.error || "Failed to resume task");
+      }
+    } catch (err: any) {
+      addToast({
+        title: "Error",
+        description: err.message || "Failed to resume task",
+        type: "error"
+      });
+    } finally {
+      setIsResuming(false);
+    }
+  }
 
   async function handleApprovalDecision(decision: "approve" | "reject") {
     if (!task) return;
@@ -327,6 +360,17 @@ export default function TaskDetailPage() {
                 >
                   {task.status}
                 </Badge>
+                {["failed", "retrying", "rejected"].includes(task.status) && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleResumeTask} 
+                    disabled={isResuming}
+                    className="bg-primary/10 text-primary hover:bg-primary/20 border-primary/20"
+                  >
+                    {isResuming ? 'Resuming...' : 'Resume Execution'}
+                  </Button>
+                )}
               </div>
               <p className="mt-2 text-muted-foreground">Workflow id: {task.workflowId}</p>
               {(task.metadata as any)?.trigger === 'workflow_api' && (

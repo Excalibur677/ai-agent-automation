@@ -30,7 +30,8 @@ export type StepType =
   | 'Slack'
   | 'Discord'
   | 'Parallel'
-  | 'Join';
+  | 'Join'
+  | 'Approval';
 
 export type ToolType = 'email' | 'file' | 'browser';
 

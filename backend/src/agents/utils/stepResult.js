@@ -1,4 +1,4 @@
-function createStepResult({ stepId, type, tool, input, output, success, error, raw, branch, caseValue, metrics }) {
+function createStepResult({ stepId, type, tool, input, output, success, error, raw, branch, caseValue, metrics, requiresApproval }) {
   const result = {
     stepId,
     type,
@@ -14,6 +14,7 @@ function createStepResult({ stepId, type, tool, input, output, success, error, r
   if (caseValue !== undefined) result.caseValue = caseValue;
   if (metrics !== undefined) result.metrics = metrics;
   if (error !== undefined) result.error = error;
+  if (requiresApproval !== undefined) result.requiresApproval = requiresApproval;
 
   return result;
 }

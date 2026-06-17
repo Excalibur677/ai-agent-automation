@@ -8,6 +8,7 @@ const {
   deleteTask,
   approveTask,
   rejectTask,
+  resumeTask,
 } = require("../controllers/task.controller");
 
 router.post("/", authMiddleware, createTask);
@@ -19,5 +20,6 @@ router.delete("/:id", authMiddleware, deleteTask);
 // HITL Approval routes
 router.post("/:id/approve", authMiddleware, approveTask);
 router.post("/:id/reject", authMiddleware, rejectTask);
+router.post("/:id/resume", authMiddleware, resumeTask);
 
 module.exports = router;

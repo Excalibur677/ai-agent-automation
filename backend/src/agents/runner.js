@@ -158,45 +158,10 @@ async function runWorkerLoop() {
         });
 
         // -------------------------------------------------------------
-        // 🔥 RESUMABLE PATH HANDLING (Issue #57 state management)
+        // 🔥 DETERMINISTIC REPLAY RESUMABLE EXECUTION
         // -------------------------------------------------------------
-        const resumeFromStepId = task.resumeFromStepId || task.metadata?.resumeFromStepId;
-        let currentStep = null;
-
-        if (resumeFromStepId && Array.isArray(task.stepResults) && task.stepResults.length > 0) {
-          console.log(`🔄 Resuming task execution path from step: ${resumeFromStepId}`);
-
-          task.stepResults.forEach((pastResult) => {
-            if (pastResult) {
-              // ── HITL: Inject human feedback if this is the approved node ──
-              if (task.approval && pastResult.stepId === task.approval.stepId) {
-                pastResult.output = task.approval.feedback
-                  ? `Approved with feedback: ${task.approval.feedback}`
-                  : 'Approved';
-                pastResult.feedback = task.approval.feedback;
-              }
-
-              context.results.push(pastResult);
-              context.last = {
-                input: pastResult.input,
-                output: pastResult.output,
-              };
-            }
-          });
-
-          currentStep = stepsMap[resumeFromStepId];
-
-          if (!currentStep) {
-            console.warn(
-              `⚠️ Target resume step ${resumeFromStepId} not found in graph definition.`
-            );
-          }
-        }
-
-        if (!currentStep) {
-          const targetSet = new Set(edges.map((e) => e.target));
-          currentStep = steps.find((s) => !targetSet.has(getStepId(s)));
-        }
+        const targetSet = new Set(edges.map((e) => e.target));
+        const currentStep = steps.find((s) => !targetSet.has(getStepId(s)));
 
         function getNextEdge(stepLocal, resultLocal) {
           if (stepLocal.type === 'condition') {
@@ -252,6 +217,9 @@ async function runWorkerLoop() {
               }
 
               const strategy = stepNode.failureStrategy || 'fail-fast';
+              
+              const isCached = Array.isArray(task.stepResults) && task.stepResults.some(r => r && r.stepId === sId && r.type === 'parallel');
+              
               const parallelStartResult = {
                 stepId: sId,
                 type: 'parallel',
@@ -261,9 +229,11 @@ async function runWorkerLoop() {
                 timestamp: new Date(),
               };
 
-              await Task.findByIdAndUpdate(task._id, {
-                $push: { stepResults: parallelStartResult },
-              });
+              if (!isCached) {
+                await Task.findByIdAndUpdate(task._id, {
+                  $push: { stepResults: parallelStartResult },
+                });
+              }
               branchContext.results.push(parallelStartResult);
 
               const branchPromises = outEdges.map((edge) => {
@@ -346,7 +316,11 @@ async function runWorkerLoop() {
                   success: true,
                   timestamp: new Date(),
                 };
-                await Task.findByIdAndUpdate(task._id, { $push: { stepResults: joinResult } });
+                
+                const isJoinCached = Array.isArray(task.stepResults) && task.stepResults.some(r => r && r.stepId === getStepId(joinNode) && r.type === 'join');
+                if (!isJoinCached) {
+                  await Task.findByIdAndUpdate(task._id, { $push: { stepResults: joinResult } });
+                }
                 branchContext.results.push(joinResult);
 
                 const nextEdge = getNextEdge(joinNode, joinResult);
@@ -357,19 +331,30 @@ async function runWorkerLoop() {
                 break;
               }
             }
-            const result = await executeStep(stepNode, branchContext, agent);
-            console.log(`StepNode: ${stepNode.name}`);
-            console.log(`result: ${result}`);
-            if (!result) {
-              throw new Error(
-                `executeStep returned ${result} for step ${stepNode.name} (${stepNode.type})`
-              );
+            let result;
+            const cachedResult = Array.isArray(task.stepResults) 
+              ? task.stepResults.find(r => r && r.stepId === getStepId(stepNode) && r.type !== 'parallel' && r.type !== 'join') 
+              : null;
+              
+            if (cachedResult) {
+              console.log(`⏭️ [Replay] Fast-forwarding previously executed step: ${stepNode.name}`);
+              result = cachedResult;
+              // The specific stepResult will already contain the updated output/feedback
+              // from when the user approved or rejected it via the API.
+            } else {
+              result = await executeStep(stepNode, branchContext, agent);
+              console.log(`StepNode: ${stepNode.name}`);
+              console.log(`result: ${result}`);
+              if (!result) {
+                throw new Error(
+                  `executeStep returned ${result} for step ${stepNode.name} (${stepNode.type})`
+                );
+              }
+              result.name = stepNode.name;
+              result.type = stepNode.type;
+              console.log(`result name: ${result.name}`);
+              await Task.findByIdAndUpdate(task._id, { $push: { stepResults: result } });
             }
-            result.name = stepNode.name;
-            result.type = stepNode.type;
-            console.log(`result name: ${result.name}`);
-
-            await Task.findByIdAndUpdate(task._id, { $push: { stepResults: result } });
 
             branchContext.results.push(result);
             branchContext.last = { input: result.input, output: result.output };
@@ -379,12 +364,15 @@ async function runWorkerLoop() {
             const nextEdge = getNextEdge(stepNode, result);
             const nextStepId = nextEdge ? nextEdge.target : null;
 
+            console.log(`[DEBUG] result:`, result);
+            console.log(`[DEBUG] cachedResult:`, cachedResult);
+            console.log(`[DEBUG] result.requiresApproval:`, result.requiresApproval);
+
             // ── HITL: Pause execution if this step requires human approval ──
-            if (result.requiresApproval) {
+            if (result.requiresApproval && !cachedResult) {
               await Task.findByIdAndUpdate(task._id, {
                 $set: {
                   status: 'pending_approval',
-                  resumeFromStepId: nextStepId,
                   approval: {
                     stepId: getStepId(stepNode),
                     requestedAt: new Date(),
@@ -407,7 +395,7 @@ async function runWorkerLoop() {
           return { success: branchSuccess, branchContext };
         }
         const finalExecution = await processBranch(currentStep, context, false);
-        if (finalExecution.paused) return; // Exit immediately if paused for HITL
+        if (finalExecution.paused) continue; // Move on to next task if paused for HITL
         success = finalExecution.success;
       } else {
         const llmResult = await executeStep(
