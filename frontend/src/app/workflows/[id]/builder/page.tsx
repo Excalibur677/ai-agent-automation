@@ -183,6 +183,7 @@ export default function WorkflowBuilderPage() {
         else if (lowerType === 'switch') legacyType = 'Switch';
         else if (lowerType === 'parallel') legacyType = 'Parallel';
         else if (lowerType === 'join') legacyType = 'Join';
+        else if (lowerType === 'approval') legacyType = 'Approval';
         else if (lowerType === 'file' || lowerType === 'email' || lowerType === 'browser') legacyType = 'Tool';
         else {
           const matchingDef = nodeDefinitions?.find(d => d.id.toLowerCase() === lowerType);

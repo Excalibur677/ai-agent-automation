@@ -58,6 +58,8 @@ function getNodeColor(type: string) {
       return '#ec4899'; // pink
     case 'Join':
       return '#8b5cf6'; // violet
+    case 'Approval':
+      return '#ef4444'; // red
     default:
       return '#374151';
   }
@@ -154,6 +156,10 @@ function buildNodePreview(
     const inEdges = edges.filter((e) => e.target === step.id);
     rows.push({ name: 'merging', type: `${inEdges.length} sources` });
     rows.push({ name: 'output', type: '{{parallel.results}}' });
+  }
+
+  if (step.type === 'Approval') {
+    rows.push({ name: 'message', type: 'string' });
   }
 
   return rows;
@@ -874,6 +880,7 @@ export default function VisualBuilder({
                   <option value="Switch">Switch</option>
                   <option value="Parallel">Parallel</option>
                   <option value="Join">Join</option>
+                  <option value="Approval">Approval (HITL)</option>
                 </optgroup>
                 <optgroup label="Integrations">
                   <option value="Tool">Tool</option>
@@ -1449,6 +1456,21 @@ export default function VisualBuilder({
                 <div className="text-xs text-muted-foreground">Connect edges to define cases.</div>
                 <div className="text-xs opacity-70">Each connection = one case value</div>
               </>
+            )}
+
+            {selectedStep.type === 'Approval' && (
+              <div>
+                <label className="text-xs text-muted-foreground">Approval Message</label>
+                <textarea
+                  className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
+                  value={selectedStep.approvalMessage || ''}
+                  onChange={(e) => updateStep(selectedStep.id, { approvalMessage: e.target.value })}
+                  placeholder="e.g. Please approve this email before it is sent."
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Workflow execution will pause at this node until a human reviews and approves the pending task.
+                </p>
+              </div>
             )}
           </div>
         </div>

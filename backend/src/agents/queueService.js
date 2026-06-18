@@ -8,6 +8,13 @@ const maxAttempts = Number(process.env.WORKER_MAX_ATTEMPTS || 3);
  * @returns Task document or null
  */
 async function claimNextTask({ workerId = "worker-1" } = {}) {
+  // Recover stuck tasks (running for > 15 minutes)
+  const STUCK_TIMEOUT_MS = 15 * 60 * 1000;
+  await Task.updateMany(
+    { status: "running", startedAt: { $lt: new Date(Date.now() - STUCK_TIMEOUT_MS) } },
+    { $set: { status: "pending" } }
+  );
+
   // Adjust query & sort as needed (priority, createdAt, etc.)
   const res = await Task.findOneAndUpdate(
     { status: { $in: ["pending", "retrying"] }, attempts: { $lt: maxAttempts } },

@@ -28,7 +28,7 @@ const PAGE_SIZE = 10;
 type Task = {
   _id: string;
   name: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "pending_approval" | "rejected";
   createdAt: string;
   workflowId?: string;
   stepResults: any;
@@ -48,7 +48,10 @@ function getStatusColor(status: string) {
     case "running":
       return "bg-warning/20 text-warning border-warning/30";
     case "failed":
+    case "rejected":
       return "bg-destructive/20 text-destructive border-destructive/30";
+    case "pending_approval":
+      return "bg-amber-500/20 text-amber-600 border-amber-500/30";
     default:
       return "bg-muted text-muted-foreground";
   }

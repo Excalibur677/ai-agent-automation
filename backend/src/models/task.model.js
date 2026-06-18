@@ -71,7 +71,7 @@ const TaskSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["pending", "running", "failed", "completed"],
+      enum: ["pending", "running", "failed", "completed", "pending_approval", "rejected"],
       default: "pending",
       index: true
     },
@@ -135,6 +135,28 @@ const TaskSchema = new mongoose.Schema(
     retryHistory: {
       type: [mongoose.Schema.Types.Mixed],
       default: []
+    },
+
+    /**
+     * HITL: Tracks which step paused execution for approval.
+     * Set when the runner encounters an approval step.
+     */
+    pausedAtStepId: {
+      type: String,
+      default: null
+    },
+
+    /**
+     * HITL: Approval metadata for human-in-the-loop workflows.
+     * Populated when a task reaches an approval node.
+     */
+    approval: {
+      stepId: { type: String },
+      requestedAt: { type: Date },
+      decidedAt: { type: Date },
+      decision: { type: String, enum: ["approved", "rejected"] },
+      decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      feedback: { type: String, default: "" }
     }
   },
   { timestamps: true }
