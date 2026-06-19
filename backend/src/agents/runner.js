@@ -115,7 +115,21 @@ async function runWorkerLoop() {
         taskId: task._id,
         userId: task.userId,
         results: [],
+        steps: {},
       };
+
+      if (Array.isArray(task.stepResults)) {
+        task.stepResults.forEach((res) => {
+          if (res && res.stepId) {
+            context.steps[res.stepId] = res;
+            context.results.push(res);
+          }
+        });
+        if (task.stepResults.length > 0) {
+          const lastRes = task.stepResults[task.stepResults.length - 1];
+          context.last = { input: lastRes.input, output: lastRes.output };
+        }
+      }
 
       // -------------------------
       // Resolve steps
@@ -217,9 +231,11 @@ async function runWorkerLoop() {
               }
 
               const strategy = stepNode.failureStrategy || 'fail-fast';
-              
-              const isCached = Array.isArray(task.stepResults) && task.stepResults.some(r => r && r.stepId === sId && r.type === 'parallel');
-              
+
+              const isCached =
+                Array.isArray(task.stepResults) &&
+                task.stepResults.some((r) => r && r.stepId === sId && r.type === 'parallel');
+
               const parallelStartResult = {
                 stepId: sId,
                 type: 'parallel',
@@ -241,6 +257,7 @@ async function runWorkerLoop() {
                 const isolatedContext = {
                   ...branchContext,
                   results: [...branchContext.results],
+                  steps: { ...(branchContext.steps || {}) },
                   last: branchContext.last ? { ...branchContext.last } : null,
                 };
                 return processBranch(targetStep, isolatedContext, true);
@@ -316,8 +333,12 @@ async function runWorkerLoop() {
                   success: true,
                   timestamp: new Date(),
                 };
-                
-                const isJoinCached = Array.isArray(task.stepResults) && task.stepResults.some(r => r && r.stepId === getStepId(joinNode) && r.type === 'join');
+
+                const isJoinCached =
+                  Array.isArray(task.stepResults) &&
+                  task.stepResults.some(
+                    (r) => r && r.stepId === getStepId(joinNode) && r.type === 'join'
+                  );
                 if (!isJoinCached) {
                   await Task.findByIdAndUpdate(task._id, { $push: { stepResults: joinResult } });
                 }
@@ -332,10 +353,16 @@ async function runWorkerLoop() {
               }
             }
             let result;
-            const cachedResult = Array.isArray(task.stepResults) 
-              ? task.stepResults.find(r => r && r.stepId === getStepId(stepNode) && r.type !== 'parallel' && r.type !== 'join') 
+            const cachedResult = Array.isArray(task.stepResults)
+              ? task.stepResults.find(
+                  (r) =>
+                    r &&
+                    r.stepId === getStepId(stepNode) &&
+                    r.type !== 'parallel' &&
+                    r.type !== 'join'
+                )
               : null;
-              
+
             if (cachedResult) {
               console.log(`⏭️ [Replay] Fast-forwarding previously executed step: ${stepNode.name}`);
               result = cachedResult;
@@ -357,6 +384,12 @@ async function runWorkerLoop() {
             }
 
             branchContext.results.push(result);
+            branchContext.steps = branchContext.steps || {};
+            const sId2 = getStepId(stepNode);
+            branchContext.steps[sId2] = result;
+            if (stepNode.alias && stepNode.alias !== sId2) {
+              branchContext.steps[stepNode.alias] = result;
+            }
             branchContext.last = { input: result.input, output: result.output };
 
             if (!result.success) return { success: false, branchContext };

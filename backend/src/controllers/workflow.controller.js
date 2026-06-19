@@ -1,10 +1,14 @@
-const Workflow = require("../models/workflow.model");
-const Task = require("../models/task.model");
-const workflowVersionService = require("../services/workflowVersion.service");
-const { normalizeWorkflowMetadata, getWorkflowGraph } = require("../utils/workflowMetadata");
-const { migrateWorkflowSteps } = require("../workflow/migrations");
-const { getToolMetadata } = require("../tools/registry");
-const { coreNodes } = require("../workflow/coreNodesRegistry");
+const Workflow = require('../models/workflow.model');
+const Task = require('../models/task.model');
+const workflowVersionService = require('../services/workflowVersion.service');
+const {
+  normalizeWorkflowMetadata,
+  getWorkflowGraph,
+  computeGraphHash,
+} = require('../utils/workflowMetadata');
+const { migrateWorkflowSteps } = require('../workflow/migrations');
+const { getToolMetadata } = require('../tools/registry');
+const { coreNodes } = require('../workflow/coreNodesRegistry');
 
 const RESERVED_WORDS = [
   'steps',
@@ -82,7 +86,7 @@ async function getWorkflow(req, res) {
     if (!workflow) return res.status(404).json({ error: 'not_found' });
     if (workflow.userId.toString() !== req.user._id.toString())
       return res.status(403).json({ error: 'forbidden' });
-    
+
     let workflowObj = workflow.toObject();
     workflowObj = migrateWorkflowSteps(workflowObj);
 
@@ -113,13 +117,11 @@ async function updateWorkflow(req, res) {
         }
         const slugRegex = /^[a-zA-Z0-9-_]+$/;
         if (!slugRegex.test(endpointName)) {
-          return res
-            .status(400)
-            .json({
-              ok: false,
-              error:
-                'Endpoint slug can only contain alphanumeric characters, hyphens, and underscores',
-            });
+          return res.status(400).json({
+            ok: false,
+            error:
+              'Endpoint slug can only contain alphanumeric characters, hyphens, and underscores',
+          });
         }
         // Check uniqueness of endpointName
         const existing = await Workflow.findOne({
@@ -128,12 +130,10 @@ async function updateWorkflow(req, res) {
           'apiSettings.endpointName': endpointName.trim(),
         });
         if (existing) {
-          return res
-            .status(400)
-            .json({
-              ok: false,
-              error: `Endpoint slug '${endpointName}' is already in use by another workflow`,
-            });
+          return res.status(400).json({
+            ok: false,
+            error: `Endpoint slug '${endpointName}' is already in use by another workflow`,
+          });
         }
       }
     }
@@ -295,7 +295,7 @@ async function updateWorkflowSteps(req, res) {
 
     // Persistently normalize steps: move any root-level tool fields into config: {}
     // This permanently upgrades legacy workflow documents on every save.
-    const BASE_STEP_PROPS = new Set(["stepId", "name", "type", "position", "config", "alias"]);
+    const BASE_STEP_PROPS = new Set(['stepId', 'name', 'type', 'position', 'config', 'alias']);
     steps = steps.map((s) => {
       const { cases, defaultTarget, trueTarget, falseTarget, ...rest } = s;
       const config = { ...(rest.config || {}) };
@@ -315,7 +315,10 @@ async function updateWorkflowSteps(req, res) {
           finalType = String(subTool).toLowerCase();
         } else {
           // Heuristic fallback if subTool was lost
-          if (config.path || (config.action && ['read','write','append','remove','list'].includes(config.action))) {
+          if (
+            config.path ||
+            (config.action && ['read', 'write', 'append', 'remove', 'list'].includes(config.action))
+          ) {
             finalType = 'file';
           } else if (config.to || config.subject) {
             finalType = 'email';
@@ -442,14 +445,156 @@ async function cloneWorkflow(req, res) {
   }
 }
 
+async function runWorkflowPartial(req, res) {
+  try {
+    const { workflowId } = req.params;
+    const { startNodeId, parentTaskId } = req.body;
+
+    if (!startNodeId || !parentTaskId) {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'startNodeId and parentTaskId are required' });
+    }
+
+    const workflow = await Workflow.findById(workflowId);
+    if (!workflow) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    if (workflow.userId.toString() !== req.user._id.toString())
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const parentTask = await Task.findById(parentTaskId);
+    if (!parentTask) {
+      return res.status(404).json({ ok: false, error: 'parent_task_not_found' });
+    }
+
+    if (parentTask.userId.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ ok: false, error: 'forbidden', message: 'Parent task ownership mismatch' });
+    }
+
+    if (!parentTask.workflowId || parentTask.workflowId.toString() !== workflowId.toString()) {
+      return res.status(400).json({
+        ok: false,
+        error: 'workflow_mismatch',
+        message: 'Parent task belongs to a different workflow',
+      });
+    }
+
+    const validStatuses = ['completed', 'failed', 'pending_approval', 'rejected'];
+    if (!validStatuses.includes(parentTask.status)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid_baseline_task',
+        message: 'Replay baseline task must be completed, failed, pending approval, or rejected.',
+      });
+    }
+
+    const { steps, edges } = getWorkflowGraph(workflow);
+
+    if (steps.length === 0) {
+      return res.status(400).json({ ok: false, error: 'workflow_has_no_steps' });
+    }
+
+    const startNodeExists = steps.some((s) => (s.stepId || s.id || s.name) === startNodeId);
+    if (!startNodeExists) {
+      return res.status(400).json({
+        ok: false,
+        error: `startNodeId '${startNodeId}' not found in current workflow steps`,
+      });
+    }
+
+    // Compute current workflow hash to check for changes
+    const currentGraphHash = computeGraphHash(steps, edges);
+
+    if (parentTask.graphHash && parentTask.graphHash !== currentGraphHash) {
+      return res.status(400).json({
+        ok: false,
+        error: 'workflow_schema_changed',
+        message:
+          'The workflow schema has changed. Please run a full execution to establish a valid baseline context, or revert to the historical version to replay.',
+      });
+    }
+
+    // Identify ancestor steps of the selected startNodeId
+    const ancestors = new Set();
+    const queue = [startNodeId];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const parentEdges = edges.filter((e) => e.target === current);
+      for (const edge of parentEdges) {
+        if (!ancestors.has(edge.source)) {
+          ancestors.add(edge.source);
+          queue.push(edge.source);
+        }
+      }
+    }
+
+    // Pre-populate successful ancestor results
+    const stepResultsToPrepopulate = [];
+    if (Array.isArray(parentTask.stepResults)) {
+      for (const res of parentTask.stepResults) {
+        if (ancestors.has(res.stepId) && res.success) {
+          stepResultsToPrepopulate.push({
+            stepId: res.stepId,
+            type: res.type,
+            tool: res.tool,
+            serverId: res.serverId,
+            toolName: res.toolName,
+            position: res.position,
+            input: res.input,
+            output: res.output,
+            success: res.success,
+            timestamp: res.timestamp,
+            durationMs: res.durationMs,
+            metrics: res.metrics,
+            metadata: {
+              replayedFromTaskId: parentTaskId,
+              isReplaySnapshot: true,
+            },
+          });
+        }
+      }
+    }
+
+    const task = await Task.create({
+      name: `Replay Run - ${workflow.name}`,
+      workflowId,
+      agentId: workflow.agentId || null,
+      userId: req.user._id,
+      input: parentTask.input || {},
+      steps,
+      currentStep: 0,
+      metadata: {
+        steps,
+        edges,
+        runningBy: 'partial_replay',
+      },
+      status: 'pending',
+      executionMode: 'partial',
+      parentTaskId,
+      stepResults: stepResultsToPrepopulate,
+      graphHash: currentGraphHash,
+    });
+
+    workflow.tasks.push(task._id);
+    await workflow.save();
+
+    return res.json({ ok: true, task });
+  } catch (err) {
+    console.error('runWorkflowPartial error', err);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+}
+
 async function getNodeDefinitions(req, res) {
   try {
     const tools = getToolMetadata();
     const allNodes = [...coreNodes, ...tools];
     res.json({ ok: true, nodeDefinitions: allNodes });
   } catch (err) {
-    console.error("getNodeDefinitions error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('getNodeDefinitions error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
@@ -462,8 +607,9 @@ module.exports = {
   addTaskToWorkflow,
   assignAgent,
   runWorkflowNow,
+  runWorkflowPartial,
   updateWorkflowSteps,
   exportWorkflow,
   cloneWorkflow,
-  getNodeDefinitions
+  getNodeDefinitions,
 };

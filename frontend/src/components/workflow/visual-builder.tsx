@@ -14,7 +14,9 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { apiUrl } from '@/lib/api';
 import { generateNodeId, generateEdgeId } from '@/utils/ids';
 import { duplicateNodesSafely } from '@/utils/graphValidation';
-import { X, AlertTriangle } from 'lucide-react';
+import { X, AlertTriangle, RefreshCw } from 'lucide-react';
+import { useParams } from 'next/navigation';
+import ReplayDialog from './replay-dialog';
 import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
 import type {
   StepType,
@@ -193,8 +195,23 @@ function computeNodes(
                 {step.name || 'Untitled Step'}
               </span>
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 {hasError && <AlertTriangle className="size-4 text-red-500" />}
+
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const replayEvent = new CustomEvent('replay-workflow-node', {
+                      detail: { nodeId: step.id, name: step.name || 'Untitled Step' },
+                    });
+                    window.dispatchEvent(replayEvent);
+                  }}
+                  title="Replay from this node"
+                  className="text-primary hover:text-primary/80 hover:scale-110 text-xs opacity-0 group-hover:opacity-100 transition mr-0.5"
+                >
+                  <RefreshCw className="size-3.5" />
+                </button>
 
                 <button
                   type="button"
@@ -267,7 +284,11 @@ export default function VisualBuilder({
   nodeDefinitions?: NodeDefinition[];
 }) {
   usePerformanceMonitor('VisualBuilder');
+  const { id: workflowId } = useParams<{ id: string }>();
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [replayNodeId, setReplayNodeId] = useState<string>('');
+  const [replayNodeName, setReplayNodeName] = useState<string>('');
+  const [replayModalOpen, setReplayModalOpen] = useState(false);
   const historyRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
   const futureRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
   const [documents, setDocuments] = useState<WorkflowDocument[]>([]);
@@ -300,7 +321,12 @@ export default function VisualBuilder({
 
   const computedNodes = useMemo(() => {
     const nodesWithErrorsSet = new Set(invalidNodeIds);
-    return computeNodes(steps, flowEdges as unknown as WorkflowEdge[], nodesWithErrorsSet, nodeDefinitions);
+    return computeNodes(
+      steps,
+      flowEdges as unknown as WorkflowEdge[],
+      nodesWithErrorsSet,
+      nodeDefinitions
+    );
   }, [steps, flowEdges, invalidNodeIds]);
 
   const [nodes, setNodes, _onNodesChange] = useNodesState(computedNodes);
@@ -324,6 +350,19 @@ export default function VisualBuilder({
     window.addEventListener('delete-workflow-node', handleNodeDelete);
     return () => window.removeEventListener('delete-workflow-node', handleNodeDelete);
   }, [deleteNode]);
+
+  useEffect(() => {
+    const handleNodeReplay = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.nodeId) {
+        setReplayNodeId(customEvent.detail.nodeId);
+        setReplayNodeName(customEvent.detail.name || 'Untitled Step');
+        setReplayModalOpen(true);
+      }
+    };
+    window.addEventListener('replay-workflow-node', handleNodeReplay);
+    return () => window.removeEventListener('replay-workflow-node', handleNodeReplay);
+  }, []);
 
   /* ---------- KEYBOARD SHORTCUT DUPLICATION SAFETY ---------- */
   useEffect(() => {
@@ -558,7 +597,7 @@ export default function VisualBuilder({
           target: params.target ?? '',
           animated: true,
           style: EDGE_STYLE,
-          label: isParallel ? 'Branch' : (caseValue || condition?.toUpperCase() || ''),
+          label: isParallel ? 'Branch' : caseValue || condition?.toUpperCase() || '',
           condition: condition ?? undefined,
           caseValue: caseValue ?? undefined,
         };
@@ -604,18 +643,36 @@ export default function VisualBuilder({
                     <div className="w-full text-sm">
                       <div className="flex items-center justify-between border-b pb-1 mb-2 group">
                         <span className="font-semibold truncate">{name}</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const deleteEvent = new CustomEvent('delete-workflow-node', {
-                              detail: { nodeId: stepId },
-                            });
-                            window.dispatchEvent(deleteEvent);
-                          }}
-                          className="text-red-500 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition"
-                        >
-                          ✕
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const replayEvent = new CustomEvent('replay-workflow-node', {
+                                detail: { nodeId: stepId, name },
+                              });
+                              window.dispatchEvent(replayEvent);
+                            }}
+                            title="Replay from this node"
+                            className="text-primary hover:text-primary/80 hover:scale-110 text-xs opacity-0 group-hover:opacity-100 transition mr-0.5"
+                          >
+                            <RefreshCw className="size-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const deleteEvent = new CustomEvent('delete-workflow-node', {
+                                detail: { nodeId: stepId },
+                              });
+                              window.dispatchEvent(deleteEvent);
+                            }}
+                            className="text-red-500 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
 
                       <div className="text-xs text-muted-foreground mb-2">{type}</div>
@@ -830,6 +887,14 @@ export default function VisualBuilder({
         <Background gap={24} size={1} />
       </ReactFlow>
 
+      <ReplayDialog
+        workflowId={workflowId}
+        startNodeId={replayNodeId}
+        startNodeName={replayNodeName}
+        open={replayModalOpen}
+        onOpenChange={setReplayModalOpen}
+      />
+
       {selectedNode && selectedStep && (
         <div className="absolute right-0 top-0 h-full w-[380px] bg-card border-l shadow-xl z-30 flex flex-col">
           <div className="p-4 border-b flex items-start justify-between">
@@ -905,7 +970,7 @@ export default function VisualBuilder({
                     value={selectedStep.failureStrategy || 'fail-fast'}
                     onChange={(e) =>
                       updateStep(selectedStep.id, {
-                        failureStrategy: e.target.value as "fail-fast" | "continue-on-error",
+                        failureStrategy: e.target.value as 'fail-fast' | 'continue-on-error',
                       })
                     }
                   >
@@ -918,7 +983,8 @@ export default function VisualBuilder({
 
             {selectedStep.type === 'Join' && (
               <div className="rounded-lg border border-muted p-3 text-xs text-muted-foreground">
-                Connect multiple incoming branches to this node. It will wait for all branches to finish before passing their merged payload (as an array) to the next step.
+                Connect multiple incoming branches to this node. It will wait for all branches to
+                finish before passing their merged payload (as an array) to the next step.
               </div>
             )}
 
@@ -1468,7 +1534,8 @@ export default function VisualBuilder({
                   placeholder="e.g. Please approve this email before it is sent."
                 />
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Workflow execution will pause at this node until a human reviews and approves the pending task.
+                  Workflow execution will pause at this node until a human reviews and approves the
+                  pending task.
                 </p>
               </div>
             )}
