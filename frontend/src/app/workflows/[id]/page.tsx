@@ -7,6 +7,7 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAssistantContext } from '@/context/assistant-context';
 import {
   Play,
@@ -39,6 +40,21 @@ import type {
   NodeDefinition,
 } from '@/types/workflow';
 
+function getStatusDescription(status: string) {
+  switch (status) {
+    case 'idle':
+      return 'Workflow is ready to run';
+    case 'running':
+      return 'Workflow is currently executing';
+    case 'failed':
+      return 'Workflow execution failed. Check logs for details.';
+    case 'completed':
+      return 'Workflow ran successfully';
+    default:
+      return `Workflow is in ${status} state`;
+  }
+}
+
 interface CreateTaskModalProps {
   workflowId: string;
   refreshWorkflow: () => void;
@@ -55,7 +71,14 @@ interface StepResult {
 interface Task {
   _id: string;
   name: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'pending_approval' | 'rejected' | 'retrying';
+  status:
+    | 'pending'
+    | 'running'
+    | 'completed'
+    | 'failed'
+    | 'pending_approval'
+    | 'rejected'
+    | 'retrying';
   stepResults?: StepResult[];
 }
 
@@ -131,7 +154,9 @@ function getStepDescription(step: WorkflowStep, nodeDefinitions: NodeDefinition[
       const val = step.config?.[field.name] ?? (step as any)[field.name];
       if (val !== undefined && val !== null && String(val).trim() !== '') {
         const display = String(val).slice(0, 160);
-        parts.push(`${field.label}: ${display}${display.length < String(val).length ? '\u2026' : ''}`);
+        parts.push(
+          `${field.label}: ${display}${display.length < String(val).length ? '\u2026' : ''}`
+        );
         if (parts.length >= 2) break;
       }
     }
@@ -450,13 +475,22 @@ export default function WorkflowDetailPage() {
           </div>
 
           <div className="mb-6 flex items-center gap-3">
-            <Badge
-              className={
-                workflow.status === 'running' ? 'bg-success/20 text-success border-success/30' : ''
-              }
-            >
-              {workflow.status}
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  className={
+                    workflow.status === 'running'
+                      ? 'bg-success/20 text-success border-success/30'
+                      : ''
+                  }
+                >
+                  {workflow.status}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{getStatusDescription(workflow.status)}</p>
+              </TooltipContent>
+            </Tooltip>
 
             <Link href={`/workflows/${workflow._id}/tasks`}>
               <Button variant="outline" size="sm">
@@ -493,10 +527,7 @@ export default function WorkflowDetailPage() {
 
                         <div className="flex-1">
                           <div className="mb-2 flex items-center gap-3">
-                            <Badge
-                              variant="outline"
-                              className={getTypeColor(step.type)}
-                            >
+                            <Badge variant="outline" className={getTypeColor(step.type)}>
                               {step.type}
                             </Badge>
 

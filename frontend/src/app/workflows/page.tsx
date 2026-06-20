@@ -76,6 +76,21 @@ function getStatusColor(status: string) {
   }
 }
 
+function getStatusDescription(status: string) {
+  switch (status) {
+    case 'idle':
+      return 'Workflow is ready to run';
+    case 'running':
+      return 'Workflow is currently executing';
+    case 'failed':
+      return 'Workflow execution failed. Check logs for details.';
+    case 'completed':
+      return 'Workflow ran successfully';
+    default:
+      return `Workflow is in ${status} state`;
+  }
+}
+
 function getCategoryBadgeClass(category?: string) {
   switch (category?.toLowerCase()) {
     case 'custom':
@@ -276,7 +291,14 @@ const WorkflowCard = memo(
           </div>
 
           <div className="mt-4 flex items-center justify-between">
-            <Badge className={getStatusColor(workflow.status)}>{workflow.status}</Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge className={getStatusColor(workflow.status)}>{workflow.status}</Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{getStatusDescription(workflow.status)}</p>
+              </TooltipContent>
+            </Tooltip>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Bot className="size-4" />
               <span>{agentName}</span>
