@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { ExecutionError, TimeoutError } = require('./utils/errors');
 
 const handlers = {
   llm: require('./handlers/llm.handler'),
@@ -31,7 +32,7 @@ async function executeStep(step, context = {}, agent = null) {
     let timeoutId = null;
     const timeoutPromise = new Promise((_, reject) => {
       timeoutId = setTimeout(() => {
-        reject(new Error(`Step execution timed out after ${finalTimeoutMs}ms`));
+        reject(new TimeoutError(`Step execution timed out after ${finalTimeoutMs}ms`, { configuredTimeoutMs: finalTimeoutMs }));
       }, finalTimeoutMs);
     });
 
@@ -55,16 +56,36 @@ async function executeStep(step, context = {}, agent = null) {
       }
 
     } catch (err) {
-      const isTimeout = err.message?.includes('timed out');
+      let normalizedError;
+
+      if (err instanceof ExecutionError) {
+        normalizedError = err;
+      } else if (err?.message && (err.message.toLowerCase().includes('timeout') || err.message.toLowerCase().includes('timed out'))) {
+        normalizedError = new TimeoutError(err.message, { configuredTimeoutMs: finalTimeoutMs });
+      } else {
+        normalizedError = new ExecutionError(
+          err?.message || 'Unknown execution error',
+          'UNKNOWN_ERROR',
+          { rawName: err?.name }
+        );
+      }
+
+      const isTimeout = normalizedError instanceof TimeoutError;
+
       lastResult = {
         stepId: validatedStepId,
         type: step.type || 'unknown',
         tool: step.tool || 'unknown',
-        input: isTimeout ? '[timeout]' : '[error]',
-        output: err.message,
         success: false,
-        error: err.stack ? String(err.stack).slice(0, 2000) : undefined,
         timestamp: new Date(),
+        input: isTimeout ? '[timeout]' : '[error]',
+        output: normalizedError.message,
+        error: err.stack ? String(err.stack).slice(0, 2000) : undefined,
+        errorMetadata: {
+          code: normalizedError.code,
+          name: normalizedError.name,
+          details: normalizedError.details
+        }
       };
 
       if (attempt < maxRetries) {
