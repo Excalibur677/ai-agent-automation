@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { performance } = require('perf_hooks');
 const { ExecutionError, TimeoutError } = require('./utils/errors');
 
 const handlers = {
@@ -27,6 +28,7 @@ async function executeStep(step, context = {}, agent = null) {
   let currentBackoffMs = 1000; 
 
   let lastResult = null;
+  const stepStartTimeMs = performance.now();
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let timeoutId = null;
@@ -45,6 +47,9 @@ async function executeStep(step, context = {}, agent = null) {
       lastResult = result;
 
       if (result.success || result.requiresApproval) {
+        if (!result.requiresApproval) {
+          result.durationMs = Math.round(performance.now() - stepStartTimeMs);
+        }
         return result;
       }
 
@@ -85,7 +90,8 @@ async function executeStep(step, context = {}, agent = null) {
           code: normalizedError.code,
           name: normalizedError.name,
           details: normalizedError.details
-        }
+        },
+        durationMs: Math.round(performance.now() - stepStartTimeMs)
       };
 
       if (attempt < maxRetries) {
@@ -99,6 +105,10 @@ async function executeStep(step, context = {}, agent = null) {
     }
   }
 
+  if (lastResult && !lastResult.durationMs && !lastResult.requiresApproval) {
+    lastResult.durationMs = Math.round(performance.now() - stepStartTimeMs);
+  }
+  
   return lastResult;
 }
 
